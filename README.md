@@ -4,6 +4,12 @@
 
 > **Navigate changing public health guidance with confidence.**
 
+## Problem Statement
+
+A public health agency publishes outbreak guidelines, vaccination protocols, and advisories that update rapidly, but field workers cannot confirm the current correct guidance during fast-moving situations.
+
+This creates a real operational risk: staff may rely on outdated instructions, uncertain regional guidance, or unofficial sources when time-sensitive decisions are needed. HealthCompass addresses this by centralizing approved guidance, tracking document versions, and retrieving the most relevant, up-to-date information with source-grounded answers.
+
 HealthCompass is a full-stack AI-powered platform designed to help **public health and frontline health workers quickly find, understand, and verify current official health guidance** during rapidly changing outbreak situations.
 
 Public health agencies continuously publish and update outbreak guidelines, vaccination protocols, emergency advisories, standard operating procedures, and regional health instructions. These resources are often distributed across PDFs, websites, circulars, and other repositories.
