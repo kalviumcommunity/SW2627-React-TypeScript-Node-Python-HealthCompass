@@ -66,7 +66,9 @@ python src/app.py
 
 ## Verification
 
-This workspace was validated using a fresh local environment on 2026-09-07. The setup flow completed successfully and the app reported:
+Clean-run verification: the virtual environment was created successfully, dependencies installed from `requirements.txt`, environment configuration was loaded from `.env`, and the project completed its startup/smoke test successfully.
+
+This workspace was validated using a fresh local environment on 2026-09-08. The setup flow completed successfully and the app reported:
 
 ```text
 Environment is configured for the RAG app.
