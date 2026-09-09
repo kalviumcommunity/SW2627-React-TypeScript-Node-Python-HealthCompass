@@ -5,60 +5,69 @@ HealthCompass is a RAG application for finding and verifying official public hea
 ## Project structure
 
 ```text
-rag-app/
-+-- data/                 # source documents (local-only)
-+-- prompts/              # prompt templates
-+-- outputs/              # logs and generated output
-+-- src/                  # application source code
-+-- .env.example          # sample env variables, committed
-+-- .gitignore            # hides local-only files
-+-- requirements.txt      # Python dependencies
-+-- README.md             # setup and verification notes
-+-- .venv/                # local virtual environment, not committed
+SW2627-React-TypeScript-Node-Python-HealthCompass/
+├── .github/               # CI workflow and PR template
+├── data/                  # local source documents, ignored by Git
+├── prompts/               # placeholder for future prompt templates
+├── outputs/               # placeholder for generated output
+├── src/
+│   ├── app.py             # chat completion and configuration examples
+│   └── healthcompass/
+│       └── ingestion/     # reusable TXT/PDF loader and JSON CLI
+├── tests/
+│   ├── fixtures/          # synthetic source documents
+│   └── test_ingestion.py  # extraction and CLI contract tests
+├── .env.example           # configuration template
+├── .gitignore
+├── pyproject.toml         # package, CLI, ingestion dependencies, test settings
+├── requirements.txt       # chat/vector dependencies and local package
+└── README.md
 ```
 
-## Dependencies
+## Local setup
 
-The environment is isolated in `.venv` and dependency version ranges are declared in `requirements.txt`.
+Requires Python 3.11 or newer. Run commands from this repository's root.
+
+macOS/Linux:
 
 ```bash
-python -m venv .venv
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-# macOS/Linux
-# source .venv/bin/activate
-
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
 ```
 
-> If your machine sits behind a certificate proxy or internal mirror, use:
->
-> ```bash
-> python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
-> ```
+Windows PowerShell:
 
-This workspace keeps the dependency set intentionally small and reproducible for the application bootstrap so a fresh setup can install cleanly.
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the application dependencies and test tools:
+
+```bash
+python -m pip install -r requirements.txt -e ".[dev]"
+```
+
+For document loading and its tests only, use `python -m pip install -e ".[dev]"`.
+This smaller installation does not install the dependencies for `src/app.py`.
+Dependency ranges are declared in `requirements.txt` and `pyproject.toml`;
+there is currently no lockfile guaranteeing identical resolved versions.
 
 ## Secrets and local config
 
-Real secrets stay in a local `.env` file, never checked in. Copy the sample file and fill in your values:
-
-```bash
-copy .env.example .env
-# or: cp .env.example .env
-```
-
-Example:
+Configuration is required only for the chat examples. Document loading needs no
+API credentials. Keep real secrets in a local `.env` file, never checked in.
+Copy the template with `cp .env.example .env` on macOS/Linux or
+`Copy-Item .env.example .env` in PowerShell, then fill in your provider values:
 
 ```env
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-real-key
-CHAT_MODEL=gpt-4o-mini
-EMBED_MODEL=text-embedding-3-small
+CHAT_MODEL=your-chat-model
+EMBED_MODEL=your-embedding-model
 ```
 
-## Run the app
+## Chat completion examples
 
 ```bash
 python src/app.py
@@ -75,20 +84,11 @@ python src/app.py --compare
 The app sends an explicit system message for role, scope, tone, and fallback
 behavior, followed by the user prompt for the current task.
 
-## Verification
-
-Clean-run verification: the virtual environment was created successfully, dependencies installed from `requirements.txt`, environment configuration was loaded from `.env`, and the project completed its startup/smoke test successfully.
-
-This workspace was validated using a fresh local environment on 2026-09-08. The setup flow completed successfully and the app reported:
-
-```text
-Environment is configured for the RAG app.
-Chat model: gpt-4o-mini
-Embedding model: text-embedding-3-small
-```
-
-That confirms the project can be recreated from a clean machine by creating the venv, installing dependencies, copying `.env.example` to `.env`, and running the python entry point.
-
+These examples currently use a generic internal-support system prompt, and
+`--compare` uses refund-policy questions. They demonstrate API calls and message
+roles; they do not retrieve uploaded documents or provide grounded HealthCompass
+answers. Both model configuration values are currently required by the startup
+validator, although the examples only call the chat model.
 
 ## Document loading — Sprint task 3.19
 
@@ -127,20 +127,18 @@ DOCX, HTML, CSV, cleaning, chunking, indexing, and upload endpoints are future w
 The loader reads the whole file into memory and is intended for local intake;
 future upload endpoints must enforce file-size limits.
 
-## Development layout and workflow
+## Testing and team workflow
 
-```text
-src/
-  app.py                    # existing chat examples
-  healthcompass/
-    ingestion/
-      loader.py             # document contract and extraction
-      cli.py                # local JSON inspection command
-tests/
-  fixtures/                 # synthetic, non-sensitive source documents
-  test_ingestion.py         # extraction and CLI contract tests
-pyproject.toml              # package, CLI, and test configuration
+```bash
+python -m pytest -q
+python -m compileall -q src
+git diff --check
 ```
+
+The document-loading suite currently contains 15 tests. It covers source identity,
+metadata preservation, page positions, UTF-8 handling, invalid inputs, protected
+PDFs, and CLI output/errors. CI also installs the full application dependencies,
+compiles `src`, and checks chat configuration using placeholder credentials.
 
 PDF fixtures are generated during tests, including multi-page, blank, and
 password-protected documents. CI runs these tests without external API calls.
