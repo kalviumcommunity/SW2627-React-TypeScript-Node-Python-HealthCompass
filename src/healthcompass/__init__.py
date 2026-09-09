@@ -1,0 +1,1 @@
+"""HealthCompass application components."""

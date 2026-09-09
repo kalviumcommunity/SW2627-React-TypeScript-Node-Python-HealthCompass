@@ -25,3 +25,8 @@ data/*
 
 # Project artifacts
 *.log
+
+# Python packaging artifacts
+*.egg-info/
+build/
+dist/
