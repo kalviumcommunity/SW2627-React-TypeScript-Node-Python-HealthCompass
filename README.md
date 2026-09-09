@@ -64,6 +64,17 @@ EMBED_MODEL=text-embedding-3-small
 python src/app.py
 ```
 
+The default command checks the local configuration without making an API call. To
+try the prompt roles and completion call, use one of these commands:
+
+```bash
+python src/app.py --prompt "What is our refund window?"
+python src/app.py --compare
+```
+
+The app sends an explicit system message for role, scope, tone, and fallback
+behavior, followed by the user prompt for the current task.
+
 ## Verification
 
 Clean-run verification: the virtual environment was created successfully, dependencies installed from `requirements.txt`, environment configuration was loaded from `.env`, and the project completed its startup/smoke test successfully.
