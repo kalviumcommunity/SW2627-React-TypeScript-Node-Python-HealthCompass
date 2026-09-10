@@ -84,6 +84,14 @@ python src/app.py --compare
 The app sends an explicit system message for role, scope, tone, and fallback
 behavior, followed by the user prompt for the current task.
 
+## Context window management
+
+`ConversationHistory` retains chat turns and measures message content before
+each request with a lightweight token estimate. When the default 6,000-token
+budget is exceeded, the oldest non-system messages are removed so the system
+instruction remains available. Pass a different `budget` when creating
+`ConversationHistory` to tune the balance between continuity and request size.
+
 These examples currently use a generic internal-support system prompt, and
 `--compare` uses refund-policy questions. They demonstrate API calls and message
 roles; they do not retrieve uploaded documents or provide grounded HealthCompass

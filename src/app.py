@@ -1,5 +1,7 @@
 import os
+import re
 import argparse
+from collections.abc import MutableSequence
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -16,6 +18,8 @@ SYSTEM_PROMPT = (
     "You are a support assistant for an internal docs tool. "
     "Answer in two sentences maximum. If you are unsure, say you don't know."
 )
+DEFAULT_CONTEXT_BUDGET = 6000
+TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
 def build_messages(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> list[dict[str, str]]:
@@ -26,6 +30,54 @@ def build_messages(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> list
     ]
 
 
+def count_tokens(text: str) -> int:
+    """Estimate tokens without requiring a model-specific tokenizer."""
+    return len(TOKEN_PATTERN.findall(text))
+
+
+def total_tokens(messages: list[dict[str, str]]) -> int:
+    """Return the estimated token count for message content."""
+    return sum(count_tokens(message.get("content", "")) for message in messages)
+
+
+def trim(messages: MutableSequence[dict[str, str]], budget: int = DEFAULT_CONTEXT_BUDGET) -> None:
+    """Drop the oldest non-system messages until the history fits the budget."""
+    if budget < 1:
+        raise ValueError("budget must be greater than zero")
+
+    while total_tokens(list(messages)) > budget and len(messages) > 2:
+        del messages[1]
+
+
+class ConversationHistory:
+    """Track a chat history and keep it below the configured context budget."""
+
+    def __init__(
+        self,
+        system_prompt: str = SYSTEM_PROMPT,
+        budget: int = DEFAULT_CONTEXT_BUDGET,
+    ) -> None:
+        self.budget = budget
+        self.messages = [{"role": "system", "content": system_prompt}]
+
+    def add_user_message(self, prompt: str) -> None:
+        self.messages.append({"role": "user", "content": prompt})
+        trim(self.messages, self.budget)
+
+    def add_assistant_message(self, response: str) -> None:
+        self.messages.append({"role": "assistant", "content": response})
+        trim(self.messages, self.budget)
+
+    def ask(self, client: OpenAI) -> str:
+        response = client.chat.completions.create(
+            model=os.environ["CHAT_MODEL"],
+            messages=self.messages,
+        )
+        answer = response.choices[0].message.content or ""
+        self.add_assistant_message(answer)
+        return answer
+
+
 def create_client() -> OpenAI:
     return OpenAI(
         api_key=os.environ["OPENAI_API_KEY"],
@@ -33,12 +85,14 @@ def create_client() -> OpenAI:
     )
 
 
-def ask_model(client: OpenAI, prompt: str) -> str:
-    response = client.chat.completions.create(
-        model=os.environ["CHAT_MODEL"],
-        messages=build_messages(prompt),
-    )
-    return response.choices[0].message.content or ""
+def ask_model(
+    client: OpenAI,
+    prompt: str,
+    history: ConversationHistory | None = None,
+) -> str:
+    conversation = history or ConversationHistory()
+    conversation.add_user_message(prompt)
+    return conversation.ask(client)
 
 
 def compare_prompts(client: OpenAI) -> None:
