@@ -37,8 +37,7 @@ def load_document(
     if source.suffix.lower() not in {".txt", ".pdf"}:
         raise DocumentLoadError("Unsupported file type; supported formats are TXT and PDF.")
     if metadata is not None and any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in metadata.items()
+        not isinstance(key, str) or not isinstance(value, str) for key, value in metadata.items()
     ):
         raise DocumentLoadError("Metadata keys and values must be strings.")
     try:
@@ -62,7 +61,9 @@ def load_document(
         except DocumentLoadError:
             raise
         except (RuntimeError, ValueError) as exc:
-            raise DocumentLoadError("Cannot extract PDF; the file may be invalid or damaged.") from exc
+            raise DocumentLoadError(
+                "Cannot extract PDF; the file may be invalid or damaged."
+            ) from exc
 
     if not any(text.strip() for _, text in pages):
         raise DocumentLoadError("Document contains no extractable text; scanned PDFs require OCR.")

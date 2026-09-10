@@ -1,9 +1,9 @@
 """Conservative, deterministic cleanup between extraction and chunking."""
 
-from dataclasses import dataclass
 import re
 import unicodedata
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .loader import DocumentPage
 
@@ -78,8 +78,14 @@ def clean_page(page: DocumentPage, *, boilerplate_lines: Iterable[str] = ()) -> 
     text, removed = _clean(original, boilerplate_lines)
     warnings = ("empty_after_cleaning",) if not text else ()
     return CleanedPage(
-        document_id=page.document_id, source=page.source, filename=page.filename,
-        page_number=page.page_number, text=text, metadata=dict(page.metadata),
-        original_text=original, cleaning_version=CLEANING_VERSION,
-        removed_boilerplate_lines=removed, warnings=warnings,
+        document_id=page.document_id,
+        source=page.source,
+        filename=page.filename,
+        page_number=page.page_number,
+        text=text,
+        metadata=dict(page.metadata),
+        original_text=original,
+        cleaning_version=CLEANING_VERSION,
+        removed_boilerplate_lines=removed,
+        warnings=warnings,
     )

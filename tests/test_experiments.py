@@ -5,20 +5,30 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import httpx
-from openai import APIConnectionError
 import pytest
+from openai import APIConnectionError
 
 from experiments.parameter_experiments import (
-    ExperimentRunner, experiment_cases, main, summarize, write_report,
+    ExperimentRunner,
+    experiment_cases,
+    main,
+    summarize,
+    write_report,
 )
 
 
 def response(content="answer", finish_reason="stop", usage=True):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)],
-        model="test-model", system_fingerprint="test-fingerprint",
-        usage=SimpleNamespace(model_dump=lambda: {"completion_tokens": 10, "prompt_tokens": 20,
-                                                 "total_tokens": 30}) if usage else None,
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)
+        ],
+        model="test-model",
+        system_fingerprint="test-fingerprint",
+        usage=SimpleNamespace(
+            model_dump=lambda: {"completion_tokens": 10, "prompt_tokens": 20, "total_tokens": 30}
+        )
+        if usage
+        else None,
     )
 
 
@@ -38,8 +48,10 @@ def test_plan_varies_one_control_with_repetitions():
 def test_success_failure_and_null_content_are_reported(tmp_path):
     client = Mock()
     client.chat.completions.create.side_effect = [
-        response("first", "length"), response("second", usage=False),
-        APIConnectionError(request=httpx.Request("POST", "https://example.invalid")), response(None),
+        response("first", "length"),
+        response("second", usage=False),
+        APIConnectionError(request=httpx.Request("POST", "https://example.invalid")),
+        response(None),
     ]
     cases = [experiment_cases()[0]] * 4
     records = ExperimentRunner(client, "test-model").run(cases)
@@ -65,11 +77,13 @@ def test_dry_run_needs_no_credentials(monkeypatch, capsys):
 
 def test_live_failures_exit_nonzero(monkeypatch, tmp_path):
     import experiments.parameter_experiments as module
+
     monkeypatch.setenv("OPENAI_API_KEY", "test-only")
     monkeypatch.setenv("CHAT_MODEL", "test-model")
     client = Mock()
     client.chat.completions.create.side_effect = APIConnectionError(
-        request=httpx.Request("POST", "https://example.invalid"))
+        request=httpx.Request("POST", "https://example.invalid")
+    )
     factory = Mock()
     factory.return_value.__enter__ = Mock(return_value=client)
     factory.return_value.__exit__ = Mock(return_value=False)
@@ -90,3 +104,23 @@ def test_no_data_has_no_variation_claim():
 def test_repetition_validation():
     with pytest.raises(ValueError):
         experiment_cases(1)
+
+
+def test_existing_report_rejected_before_any_api_calls(monkeypatch, tmp_path):
+    import experiments.parameter_experiments as module
+
+    client_factory = Mock()
+    monkeypatch.setattr(module, "OpenAI", client_factory)
+    path = tmp_path / "existing.json"
+    path.write_text("existing evidence", encoding="utf-8")
+    assert main(["--output", str(path)]) == 1
+    client_factory.assert_not_called()
+    assert path.read_text(encoding="utf-8") == "existing evidence"
+
+
+def test_missing_choices_recorded_as_failure():
+    client = Mock()
+    client.chat.completions.create.return_value = SimpleNamespace(choices=[])
+    records = ExperimentRunner(client, "test-model").run(experiment_cases()[:1])
+    assert records[0]["status"] == "error"
+    assert records[0]["error_type"] == "ValueError"

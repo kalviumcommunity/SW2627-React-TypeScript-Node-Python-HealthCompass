@@ -1,7 +1,7 @@
 """Cleaning must preserve guidance content and source traceability."""
 
-from dataclasses import asdict
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pymupdf
@@ -18,8 +18,8 @@ def test_normalization_preserves_paragraphs_numbers_and_lists():
     before = asdict(page)
     cleaned = clean_page(page, boilerplate_lines=["DRAFT HEADER", "DRAFT FOOTER"])
     assert cleaned.text == (
-        "Café guidance\nKeep 0.5 mg; do not exceed 5 mg.\n\n"
-        "- Region: District A\nVersion: 2.0")
+        "Café guidance\nKeep 0.5 mg; do not exceed 5 mg.\n\n- Region: District A\nVersion: 2.0"
+    )
     assert cleaned.original_text == page.text
     assert asdict(page) == before
     for field in ["document_id", "source", "filename", "page_number", "metadata"]:
@@ -33,14 +33,22 @@ def test_normalization_preserves_paragraphs_numbers_and_lists():
 def test_configured_line_is_not_removed_from_body_or_substrings():
     text = "HEADER\nTitle\nHEADER\nHEADER is meaningful here\nFOOTER"
     assert clean_text(text, boilerplate_lines=["HEADER", "FOOTER"]) == (
-        "Title\nHEADER\nHEADER is meaningful here")
+        "Title\nHEADER\nHEADER is meaningful here"
+    )
     assert clean_text(text).startswith("HEADER")
 
 
-@pytest.mark.parametrize("text", [
-    " a\t b\r\n\r\n\r\nc ", "Café\u00a0guide", "\ufeffa\x00b", "", "\r\n\t",
-    "HEADER\nHEADER\n\nBody\nFOOTER\nFOOTER",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        " a\t b\r\n\r\n\r\nc ",
+        "Café\u00a0guide",
+        "\ufeffa\x00b",
+        "",
+        "\r\n\t",
+        "HEADER\nHEADER\n\nBody\nFOOTER\nFOOTER",
+    ],
+)
 def test_cleaning_is_idempotent(text):
     once = clean_text(text, boilerplate_lines=["HEADER", "FOOTER"])
     assert clean_text(once, boilerplate_lines=["HEADER", "FOOTER"]) == once
@@ -90,8 +98,9 @@ def test_cli_cleaning_is_opt_in(monkeypatch, capsys):
     assert main() == 0
     raw = json.loads(capsys.readouterr().out)[0]
     assert "original_text" not in raw
-    monkeypatch.setattr("sys.argv", ["load", str(FIXTURE), "--clean",
-                                    "--remove-boilerplate-line", "DRAFT HEADER"])
+    monkeypatch.setattr(
+        "sys.argv", ["load", str(FIXTURE), "--clean", "--remove-boilerplate-line", "DRAFT HEADER"]
+    )
     assert main() == 0
     clean = json.loads(capsys.readouterr().out)[0]
     assert clean["original_text"] == raw["text"]

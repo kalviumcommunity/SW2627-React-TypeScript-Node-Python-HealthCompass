@@ -6,14 +6,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from healthcompass.chat.history import ConversationHistory, count_tokens, total_tokens, trim
 from app import ask_model, main
+from healthcompass.chat.history import ConversationHistory, count_tokens, total_tokens, trim
 
 
 def client_with(answer="answer"):
     client = Mock()
     client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=answer))])
+        choices=[SimpleNamespace(message=SimpleNamespace(content=answer))]
+    )
     return client
 
 
@@ -24,10 +25,12 @@ def test_estimate_handles_long_words_and_unicode():
 
 
 def test_trim_whole_turns():
-    messages = [{"role": "system", "content": "s"},
-                {"role": "user", "content": "old"},
-                {"role": "assistant", "content": "old answer"},
-                {"role": "user", "content": "new"}]
+    messages = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "new"},
+    ]
     trim(messages, 90)
     assert [m["role"] for m in messages] == ["system", "user"]
     assert messages[-1]["content"] == "new"
@@ -85,6 +88,7 @@ def test_empty_response_rolls_back(monkeypatch):
 
 def test_interactive_cli_reuses_history(monkeypatch):
     import app
+
     client = client_with()
     monkeypatch.setenv("CHAT_MODEL", "test-model")
     monkeypatch.setattr(app, "validate_env", lambda: None)
@@ -94,3 +98,39 @@ def test_interactive_cli_reuses_history(monkeypatch):
     monkeypatch.setattr("sys.argv", ["app", "--chat"])
     assert main() == 0
     assert len(client.chat.completions.create.call_args.kwargs["messages"]) == 4
+
+
+def test_compare_uses_independent_histories_and_configured_cap(monkeypatch):
+    from app import compare_prompts
+
+    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    client = client_with()
+    compare_prompts(client, budget=1500, max_output_tokens=60, token_limit_parameter="max_tokens")
+    requests = client.chat.completions.create.call_args_list
+    assert len(requests) == 2
+    for call in requests:
+        assert [message["role"] for message in call.kwargs["messages"]] == ["system", "user"]
+        assert call.kwargs["max_tokens"] == 60
+        assert "max_completion_tokens" not in call.kwargs
+
+
+def test_cli_configuration_errors_use_stderr(monkeypatch, capsys):
+    import app
+
+    def invalid_configuration():
+        raise RuntimeError("Missing configuration")
+
+    monkeypatch.setattr(app, "validate_env", invalid_configuration)
+    monkeypatch.setattr("sys.argv", ["app"])
+    assert main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Missing configuration" in captured.err
+
+
+def test_invalid_role_sequence_does_not_mutate_history():
+    messages = [{"role": "system", "content": "s"}, {"role": "assistant", "content": "a"}]
+    previous = deepcopy(messages)
+    with pytest.raises(ValueError, match="alternate"):
+        trim(messages)
+    assert messages == previous

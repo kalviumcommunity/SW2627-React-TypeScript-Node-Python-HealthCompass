@@ -1,13 +1,13 @@
 """Repeatable parameter experiments; never turn expected behavior into measured results."""
 
 import argparse
-from collections import defaultdict
-from datetime import datetime, timezone
 import json
 import os
+import sys
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
-import sys
 
 from dotenv import load_dotenv
 from openai import APIError, OpenAI
@@ -20,7 +20,9 @@ Question: Why should the assistant check approval, region and effective date?
 Give a short explanation. End with the literal marker END_OF_ANSWER."""
 
 
-def experiment_cases(repetitions: int = 3, token_limit_parameter: str = "max_completion_tokens") -> list[dict]:
+def experiment_cases(
+    repetitions: int = 3, token_limit_parameter: str = "max_completion_tokens"
+) -> list[dict]:
     """Hold prompt and other controls fixed within each comparison."""
     if type(repetitions) is not int or repetitions < 2:
         raise ValueError("Use at least two repetitions to compare variation")
@@ -43,13 +45,19 @@ def experiment_cases(repetitions: int = 3, token_limit_parameter: str = "max_com
             if value is not None:
                 settings[key] = value
             for run in range(1, repetitions + 1):
-                cases.append({"parameter": parameter, "value": value,
-                              "run": run, "settings": settings.copy()})
+                cases.append(
+                    {
+                        "parameter": parameter,
+                        "value": value,
+                        "run": run,
+                        "settings": settings.copy(),
+                    }
+                )
     return cases
 
 
 class ExperimentRunner:
-    def __init__(self, client, model: str):
+    def __init__(self, client: OpenAI, model: str) -> None:
         if not model or not model.strip():
             raise ValueError("CHAT_MODEL must be configured")
         self.client = client
@@ -58,13 +66,18 @@ class ExperimentRunner:
     def run(self, cases: list[dict]) -> list[dict]:
         records = []
         for case in cases:
-            record = {**case, "requested_model": self.model,
-                      "timestamp": datetime.now(timezone.utc).isoformat()}
+            record = {
+                **case,
+                "requested_model": self.model,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[{"role": "system", "content": "Use only the supplied context."},
-                              {"role": "user", "content": BASE_PROMPT}],
+                    messages=[
+                        {"role": "system", "content": "Use only the supplied context."},
+                        {"role": "user", "content": BASE_PROMPT},
+                    ],
                     **case["settings"],
                 )
                 if not response.choices:
@@ -73,15 +86,21 @@ class ExperimentRunner:
                 content = choice.message.content
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("No text response")
-                record.update(status="success", content=content,
-                              finish_reason=choice.finish_reason,
-                              response_model=response.model,
-                              system_fingerprint=getattr(response, "system_fingerprint", None),
-                              usage=response.usage.model_dump() if response.usage else None)
+                record.update(
+                    status="success",
+                    content=content,
+                    finish_reason=choice.finish_reason,
+                    response_model=response.model,
+                    system_fingerprint=getattr(response, "system_fingerprint", None),
+                    usage=response.usage.model_dump() if response.usage else None,
+                )
             except (APIError, ValueError) as exc:
                 # Provider messages may echo credentials or request details. Record type/status only.
-                record.update(status="error", error_type=type(exc).__name__,
-                              http_status=getattr(exc, "status_code", None))
+                record.update(
+                    status="error",
+                    error_type=type(exc).__name__,
+                    http_status=getattr(exc, "status_code", None),
+                )
             records.append(record)
         return records
 
@@ -93,35 +112,48 @@ def summarize(records: list[dict]) -> dict:
     comparisons = []
     for (parameter, value), group in groups.items():
         successful = [record for record in group if record["status"] == "success"]
-        completion_tokens = [r["usage"]["completion_tokens"] for r in successful
-                             if r["usage"] and r["usage"].get("completion_tokens") is not None]
-        comparisons.append({
-            "parameter": parameter, "value": json.loads(value),
-            "attempted": len(group), "successful": len(successful),
-            "failed": len(group) - len(successful),
-            "distinct_outputs": len({r["content"] for r in successful}) if successful else None,
-            "length_limited": sum(r["finish_reason"] == "length" for r in successful),
-            "mean_completion_tokens": mean(completion_tokens) if completion_tokens else None,
-            "usage_samples": len(completion_tokens),
-            "outputs_containing_marker": sum("END_OF_ANSWER" in r["content"] for r in successful),
-        })
-    return {"attempted": len(records),
-            "successful": sum(r["status"] == "success" for r in records),
-            "failed": sum(r["status"] == "error" for r in records),
-            "comparisons": comparisons}
+        completion_tokens = [
+            r["usage"]["completion_tokens"]
+            for r in successful
+            if r["usage"] and r["usage"].get("completion_tokens") is not None
+        ]
+        comparisons.append(
+            {
+                "parameter": parameter,
+                "value": json.loads(value),
+                "attempted": len(group),
+                "successful": len(successful),
+                "failed": len(group) - len(successful),
+                "distinct_outputs": len({r["content"] for r in successful}) if successful else None,
+                "length_limited": sum(r["finish_reason"] == "length" for r in successful),
+                "mean_completion_tokens": mean(completion_tokens) if completion_tokens else None,
+                "usage_samples": len(completion_tokens),
+                "outputs_containing_marker": sum(
+                    "END_OF_ANSWER" in r["content"] for r in successful
+                ),
+            }
+        )
+    return {
+        "attempted": len(records),
+        "successful": sum(r["status"] == "success" for r in records),
+        "failed": sum(r["status"] == "error" for r in records),
+        "comparisons": comparisons,
+    }
 
 
 def write_report(path: Path, records: list[dict]) -> None:
     """Write raw measurements and derived metrics, refusing to overwrite prior evidence."""
     report = {
-        "schema_version": 1, "prompt": BASE_PROMPT,
+        "schema_version": 1,
+        "prompt": BASE_PROMPT,
         "limitations": [
             "Output variation is observed, not guaranteed by temperature.",
             "finish_reason=stop may mean natural completion or a stop sequence.",
             "These comparisons do not measure factual correctness or grounding.",
             "API usage is recorded when supplied; no currency cost is inferred.",
         ],
-        "summary": summarize(records), "records": records,
+        "summary": summarize(records),
+        "records": records,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as stream:
@@ -129,18 +161,25 @@ def write_report(path: Path, records: list[dict]) -> None:
         stream.write("\n")
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--token-limit-parameter", choices=["max_completion_tokens", "max_tokens"],
-                        default="max_completion_tokens")
+    parser.add_argument(
+        "--token-limit-parameter",
+        choices=["max_completion_tokens", "max_tokens"],
+        default="max_completion_tokens",
+    )
     parser.add_argument("--output", type=Path, default=Path("outputs/parameter-experiments.json"))
     parser.add_argument("--dry-run", action="store_true", help="Print the plan without API calls")
     args = parser.parse_args(argv)
     try:
         cases = experiment_cases(args.repetitions, args.token_limit_parameter)
         if args.dry_run:
-            print(json.dumps({"planned_calls": len(cases), "prompt": BASE_PROMPT, "cases": cases}, indent=2))
+            print(
+                json.dumps(
+                    {"planned_calls": len(cases), "prompt": BASE_PROMPT, "cases": cases}, indent=2
+                )
+            )
             return 0
         if args.output.exists():
             raise ValueError("Output already exists; choose a new --output path")
@@ -149,14 +188,19 @@ def main(argv=None) -> int:
         if any(not os.getenv(key, "").strip() for key in required):
             raise ValueError("Configure OPENAI_API_KEY and CHAT_MODEL before a live run")
         # No automatic retries: attempted records correspond to explicit SDK calls.
-        with OpenAI(api_key=os.environ["OPENAI_API_KEY"],
-                    base_url=os.getenv("OPENAI_BASE_URL") or None,
-                    timeout=30, max_retries=0) as client:
+        with OpenAI(
+            api_key=os.environ["OPENAI_API_KEY"],
+            base_url=os.getenv("OPENAI_BASE_URL") or None,
+            timeout=30,
+            max_retries=0,
+        ) as client:
             records = ExperimentRunner(client, os.environ["CHAT_MODEL"]).run(cases)
         write_report(args.output, records)
         summary = summarize(records)
-        print(f"Attempted {summary['attempted']}; successful {summary['successful']}; "
-              f"failed {summary['failed']}. Report: {args.output}")
+        print(
+            f"Attempted {summary['attempted']}; successful {summary['successful']}; "
+            f"failed {summary['failed']}. Report: {args.output}"
+        )
         return 1 if summary["failed"] else 0
     except (ValueError, OSError) as exc:
         print(f"Experiment error: {exc}", file=sys.stderr)

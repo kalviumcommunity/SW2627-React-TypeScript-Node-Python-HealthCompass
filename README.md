@@ -16,10 +16,9 @@ SW2627-React-TypeScript-Node-Python-HealthCompass/
 │       ├── chat/          # bounded conversation history
 │       └── ingestion/     # TXT/PDF loading, cleaning, and JSON CLI
 ├── experiments/           # generation parameter comparisons
-├── docs/reviews/           # implementation review findings
 ├── tests/
 │   ├── fixtures/          # synthetic source documents
-│   └── test_ingestion.py  # extraction and CLI contract tests
+│   └── test_*.py          # ingestion, cleaning, chat, and experiment tests
 ├── .env.example           # configuration template
 ├── .gitignore
 ├── pyproject.toml         # package, CLI, ingestion dependencies, test settings
@@ -201,6 +200,8 @@ allowing the removal policy to be changed without losing source text.
 ## Testing and team workflow
 
 ```bash
+python -m ruff check .
+python -m ruff format --check .
 python -m pytest -q
 python -m compileall -q src experiments
 git diff --check
@@ -208,8 +209,9 @@ git diff --check
 
 The test suite covers chat history, experiment request/report handling, extraction,
 cleaning, metadata preservation, page positions, Unicode, invalid inputs, protected
-PDFs, and CLI output/errors. All API tests use mocked responses. CI also installs the full application dependencies,
-compiles `src` and `experiments`, and checks chat configuration using placeholder credentials.
+PDFs, and CLI output/errors. All API tests use mocked responses. CI installs the full application dependencies,
+checks lint and formatting, runs tests, compiles `src` and `experiments`, and checks
+chat configuration using placeholder credentials.
 
 PDF fixtures are generated during tests, including multi-page, blank, and
 password-protected documents. CI runs these tests without external API calls.

@@ -1,6 +1,12 @@
 """Bounded text-only conversation history with atomic turn updates."""
 
+from __future__ import annotations
+
 from collections.abc import MutableSequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openai import OpenAI
 import os
 
 SYSTEM_PROMPT = (
@@ -50,10 +56,13 @@ def trim(messages: MutableSequence[dict[str, str]], budget: int = DEFAULT_CONTEX
 class ConversationHistory:
     """Maintain valid turns and reserve output space before each request."""
 
-    def __init__(self, system_prompt: str = SYSTEM_PROMPT,
-                 budget: int = DEFAULT_CONTEXT_BUDGET,
-                 max_output_tokens: int = DEFAULT_OUTPUT_TOKENS,
-                 token_limit_parameter: str = "max_completion_tokens") -> None:
+    def __init__(
+        self,
+        system_prompt: str = SYSTEM_PROMPT,
+        budget: int = DEFAULT_CONTEXT_BUDGET,
+        max_output_tokens: int = DEFAULT_OUTPUT_TOKENS,
+        token_limit_parameter: str = "max_completion_tokens",
+    ) -> None:
         if type(budget) is not int or type(max_output_tokens) is not int:
             raise ValueError("Context and output budgets must be integers")
         if max_output_tokens < 1 or budget <= max_output_tokens:
@@ -84,13 +93,14 @@ class ConversationHistory:
         trim(candidate, self.budget)
         self.messages = candidate
 
-    def ask(self, client) -> str:
+    def ask(self, client: OpenAI) -> str:
         if self.messages[-1]["role"] != "user":
             raise ValueError("Add a user message before requesting a response")
         candidate = [message.copy() for message in self.messages]
         trim(candidate, self.input_budget)
         response = client.chat.completions.create(
-            model=os.environ["CHAT_MODEL"], messages=candidate,
+            model=os.environ["CHAT_MODEL"],
+            messages=candidate,
             **{self.token_limit_parameter: self.max_output_tokens},
         )
         if not response.choices:
