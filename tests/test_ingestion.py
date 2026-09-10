@@ -1,7 +1,7 @@
 """Offline intake contract tests using synthetic documents."""
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pymupdf
 import pytest
@@ -45,13 +45,16 @@ def test_pdf_preserves_blank_pages_and_positions(tmp_path):
     assert pages[2].metadata["version"] == "2"
 
 
-@pytest.mark.parametrize("name,content,message", [
-    ("empty.txt", b"", "empty"),
-    ("blank.txt", b" \n\t", "no extractable text"),
-    ("invalid.txt", b"\xff", "UTF-8"),
-    ("broken.pdf", b"not a PDF", "invalid or damaged"),
-    ("other.csv", b"a,b", "Unsupported file type"),
-])
+@pytest.mark.parametrize(
+    "name,content,message",
+    [
+        ("empty.txt", b"", "empty"),
+        ("blank.txt", b" \n\t", "no extractable text"),
+        ("invalid.txt", b"\xff", "UTF-8"),
+        ("broken.pdf", b"not a PDF", "invalid or damaged"),
+        ("other.csv", b"a,b", "Unsupported file type"),
+    ],
+)
 def test_invalid_documents(tmp_path, name, content, message):
     path = tmp_path / name
     path.write_bytes(content)
@@ -79,16 +82,20 @@ def test_unusable_pdf(tmp_path, encrypted):
     path = tmp_path / "document.pdf"
     with pymupdf.open() as doc:
         doc.new_page()
-        kwargs = {"encryption": pymupdf.PDF_ENCRYPT_AES_256,
-                  "owner_pw": "owner", "user_pw": "reader"} if encrypted else {}
+        kwargs = (
+            {"encryption": pymupdf.PDF_ENCRYPT_AES_256, "owner_pw": "owner", "user_pw": "reader"}
+            if encrypted
+            else {}
+        )
         doc.save(path, **kwargs)
     with pytest.raises(DocumentLoadError, match="Password-protected" if encrypted else "OCR"):
         load_document(path)
 
 
 def test_cli_json(monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", ["healthcompass-load", str(FIXTURE),
-                                     "--metadata", '{"region":"District A"}'])
+    monkeypatch.setattr(
+        "sys.argv", ["healthcompass-load", str(FIXTURE), "--metadata", '{"region":"District A"}']
+    )
     assert main() == 0
     output = capsys.readouterr()
     assert json.loads(output.out)[0]["metadata"] == {"region": "District A"}

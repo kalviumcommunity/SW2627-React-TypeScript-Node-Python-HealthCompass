@@ -30,3 +30,9 @@ data/*
 *.egg-info/
 build/
 dist/
+
+# Local experiment measurements
+outputs/*.json
+
+# Python lint cache
+.ruff_cache/
