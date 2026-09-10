@@ -1,10 +1,13 @@
 import os
-import re
 import argparse
-from collections.abc import MutableSequence
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIError, OpenAI
+
+from healthcompass.chat.history import (
+    ConversationHistory, DEFAULT_CONTEXT_BUDGET, DEFAULT_OUTPUT_TOKENS,
+    SYSTEM_PROMPT, count_tokens, total_tokens, trim,
+)
 
 
 REQUIRED_ENV = {
@@ -14,68 +17,9 @@ REQUIRED_ENV = {
     "EMBED_MODEL": "Embedding model",
 }
 
-SYSTEM_PROMPT = (
-    "You are a support assistant for an internal docs tool. "
-    "Answer in two sentences maximum. If you are unsure, say you don't know."
-)
-DEFAULT_CONTEXT_BUDGET = 6000
-TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
-
-
 def build_messages(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> list[dict[str, str]]:
-    """Build a chat request with explicit system and user roles."""
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-
-def count_tokens(text: str) -> int:
-    """Estimate tokens without requiring a model-specific tokenizer."""
-    return len(TOKEN_PATTERN.findall(text))
-
-
-def total_tokens(messages: list[dict[str, str]]) -> int:
-    """Return the estimated token count for message content."""
-    return sum(count_tokens(message.get("content", "")) for message in messages)
-
-
-def trim(messages: MutableSequence[dict[str, str]], budget: int = DEFAULT_CONTEXT_BUDGET) -> None:
-    """Drop the oldest non-system messages until the history fits the budget."""
-    if budget < 1:
-        raise ValueError("budget must be greater than zero")
-
-    while total_tokens(list(messages)) > budget and len(messages) > 2:
-        del messages[1]
-
-
-class ConversationHistory:
-    """Track a chat history and keep it below the configured context budget."""
-
-    def __init__(
-        self,
-        system_prompt: str = SYSTEM_PROMPT,
-        budget: int = DEFAULT_CONTEXT_BUDGET,
-    ) -> None:
-        self.budget = budget
-        self.messages = [{"role": "system", "content": system_prompt}]
-
-    def add_user_message(self, prompt: str) -> None:
-        self.messages.append({"role": "user", "content": prompt})
-        trim(self.messages, self.budget)
-
-    def add_assistant_message(self, response: str) -> None:
-        self.messages.append({"role": "assistant", "content": response})
-        trim(self.messages, self.budget)
-
-    def ask(self, client: OpenAI) -> str:
-        response = client.chat.completions.create(
-            model=os.environ["CHAT_MODEL"],
-            messages=self.messages,
-        )
-        answer = response.choices[0].message.content or ""
-        self.add_assistant_message(answer)
-        return answer
+    return [{"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}]
 
 
 def create_client() -> OpenAI:
@@ -91,8 +35,14 @@ def ask_model(
     history: ConversationHistory | None = None,
 ) -> str:
     conversation = history or ConversationHistory()
-    conversation.add_user_message(prompt)
-    return conversation.ask(client)
+    previous = [message.copy() for message in conversation.messages]
+    try:
+        conversation.add_user_message(prompt)
+        return conversation.ask(client)
+    except Exception:
+        # A failed request must not leave a pending user message or lose history.
+        conversation.messages = previous
+        raise
 
 
 def compare_prompts(client: OpenAI) -> None:
@@ -121,15 +71,21 @@ def validate_env() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run prompt construction examples.")
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--prompt",
         help="Send one user prompt to the configured chat model.",
     )
-    parser.add_argument(
+    modes.add_argument(
         "--compare",
         action="store_true",
         help="Compare a vague prompt with a constrained prompt.",
     )
+    modes.add_argument("--chat", action="store_true", help="Interactive multi-turn chat; /exit to quit")
+    parser.add_argument("--context-budget", type=int, default=DEFAULT_CONTEXT_BUDGET)
+    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
+    parser.add_argument("--token-limit-parameter", choices=["max_completion_tokens", "max_tokens"],
+                        default="max_completion_tokens")
     args = parser.parse_args()
     try:
         validate_env()
@@ -137,21 +93,42 @@ def main() -> int:
         print(f"Environment configuration error: {exc}")
         return 1
 
-    if args.prompt and args.compare:
-        parser.error("--prompt and --compare cannot be used together")
-
-    if args.prompt or args.compare:
-        client = create_client()
-    else:
-        print("Environment is configured for the RAG app.")
-        print(f"Chat model: {os.getenv('CHAT_MODEL')}")
-        print(f"Embedding model: {os.getenv('EMBED_MODEL')}")
-        return 0
-
-    if args.compare:
-        compare_prompts(client)
-    else:
-        print(ask_model(client, args.prompt))
+    try:
+        history = ConversationHistory(budget=args.context_budget,
+                                      max_output_tokens=args.max_output_tokens,
+                                      token_limit_parameter=args.token_limit_parameter)
+        if args.prompt is not None or args.compare or args.chat:
+            client = create_client()
+        else:
+            print("Environment is configured for the RAG app.")
+            print(f"Chat model: {os.getenv('CHAT_MODEL')}")
+            print(f"Embedding model: {os.getenv('EMBED_MODEL')}")
+            return 0
+        if args.chat:
+            while True:
+                try:
+                    prompt = input("You: ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if prompt.strip() == "/exit":
+                    break
+                if prompt.strip():
+                    print(ask_model(client, prompt, history))
+        elif args.compare:
+            for prompt in ["Explain our refund policy.",
+                           "In one sentence, state the refund window in days."]:
+                comparison = ConversationHistory(budget=args.context_budget,
+                    max_output_tokens=args.max_output_tokens,
+                    token_limit_parameter=args.token_limit_parameter)
+                print(f"{prompt} -> {ask_model(client, prompt, comparison)}")
+        else:
+            print(ask_model(client, args.prompt, history))
+    except APIError as exc:
+        print(f"Chat request failed ({type(exc).__name__}); check provider configuration.")
+        return 1
+    except ValueError as exc:
+        print(f"Chat request error: {exc}")
+        return 1
     return 0
 
 

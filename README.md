@@ -49,7 +49,8 @@ python -m pip install -r requirements.txt -e ".[dev]"
 ```
 
 For document loading and its tests only, use `python -m pip install -e ".[dev]"`.
-This smaller installation does not install the dependencies for `src/app.py`.
+This smaller installation does not install the dependencies for `src/app.py`
+or the chat/experiment regression tests. Run only the ingestion tests with it.
 Dependency ranges are declared in `requirements.txt` and `pyproject.toml`;
 there is currently no lockfile guaranteeing identical resolved versions.
 
@@ -86,11 +87,22 @@ behavior, followed by the user prompt for the current task.
 
 ## Context window management
 
-`ConversationHistory` retains chat turns and measures message content before
-each request with a lightweight token estimate. When the default 6,000-token
-budget is exceeded, the oldest non-system messages are removed so the system
-instruction remains available. Pass a different `budget` when creating
-`ConversationHistory` to tune the balance between continuity and request size.
+`ConversationHistory` preserves the system message and removes complete oldest
+user/assistant pairs. It rejects a newest turn that cannot fit, reserves 512 output
+tokens within a default 6,000-unit context budget, and restores prior history when
+a request fails. The estimate counts UTF-8 bytes plus message framing allowances;
+it is deliberately conservative, not exact model tokenization or billing usage.
+Set the budget below your provider's actual context limit. Tool calls and
+multimodal messages are not supported by this text-only history manager.
+
+```bash
+python src/app.py --chat --context-budget 6000 --max-output-tokens 512
+```
+
+Enter `/exit` or EOF to quit. The output cap defaults to `max_completion_tokens`;
+use `--token-limit-parameter max_tokens` only for providers requiring that field.
+See [parameter experiments](experiments/README.md) for repeated, measurable
+comparisons of generation settings.
 
 These examples currently use a generic internal-support system prompt, and
 `--compare` uses refund-policy questions. They demonstrate API calls and message
@@ -105,7 +117,7 @@ Requires Python 3.11+. From the repository root, install the project and test to
 ```bash
 python -m pip install -e ".[dev]"
 healthcompass-load tests/fixtures/guidance.txt --metadata '{"version":"1","region":"District A"}'
-python -m pytest -q
+python -m pytest -q tests/test_ingestion.py
 ```
 
 The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM)
@@ -139,14 +151,14 @@ future upload endpoints must enforce file-size limits.
 
 ```bash
 python -m pytest -q
-python -m compileall -q src
+python -m compileall -q src experiments
 git diff --check
 ```
 
-The document-loading suite currently contains 15 tests. It covers source identity,
+The test suite covers chat history, experiment request/report handling, and source identity,
 metadata preservation, page positions, UTF-8 handling, invalid inputs, protected
 PDFs, and CLI output/errors. CI also installs the full application dependencies,
-compiles `src`, and checks chat configuration using placeholder credentials.
+compiles `src` and `experiments`, and checks chat configuration using placeholder credentials.
 
 PDF fixtures are generated during tests, including multi-page, blank, and
 password-protected documents. CI runs these tests without external API calls.
