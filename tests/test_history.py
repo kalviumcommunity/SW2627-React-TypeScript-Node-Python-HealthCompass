@@ -66,6 +66,28 @@ def test_request_reserves_output_and_retains_follow_up(monkeypatch):
     assert total_tokens(request["messages"]) + request["max_completion_tokens"] <= history.budget
 
 
+def test_request_uses_grounded_generation_defaults(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    history = ConversationHistory("s")
+    client = client_with()
+    ask_model(client, "question", history)
+    request = client.chat.completions.create.call_args.kwargs
+    assert request["temperature"] == 0.1
+    assert request["max_completion_tokens"] == 300
+    assert request["stop"] == ["\n\nUser:"]
+    assert "top_p" not in request
+
+
+def test_request_accepts_top_p_override(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    history = ConversationHistory("s", top_p=0.5, stop=["END_OF_ANSWER"])
+    client = client_with()
+    ask_model(client, "question", history)
+    request = client.chat.completions.create.call_args.kwargs
+    assert request["top_p"] == 0.5
+    assert request["stop"] == ["END_OF_ANSWER"]
+
+
 def test_failed_request_restores_previous_turns(monkeypatch):
     monkeypatch.setenv("CHAT_MODEL", "test-model")
     history = ConversationHistory("s", 180, 40)

@@ -8,6 +8,8 @@ from openai import APIError, OpenAI
 from healthcompass.chat.history import (
     DEFAULT_CONTEXT_BUDGET,
     DEFAULT_OUTPUT_TOKENS,
+    DEFAULT_STOP,
+    DEFAULT_TEMPERATURE,
     SYSTEM_PROMPT,
     ConversationHistory,
 )
@@ -52,6 +54,9 @@ def compare_prompts(
     budget: int = DEFAULT_CONTEXT_BUDGET,
     max_output_tokens: int = DEFAULT_OUTPUT_TOKENS,
     token_limit_parameter: str = "max_completion_tokens",
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float | None = None,
+    stop: list[str] | None = None,
 ) -> None:
     """Compare prompts with independent histories and identical request budgets."""
     prompts = [
@@ -63,6 +68,9 @@ def compare_prompts(
             budget=budget,
             max_output_tokens=max_output_tokens,
             token_limit_parameter=token_limit_parameter,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop,
         )
         print(f"{prompt} -> {ask_model(client, prompt, history)}")
 
@@ -97,12 +105,16 @@ def main() -> int:
     )
     parser.add_argument("--context-budget", type=int, default=DEFAULT_CONTEXT_BUDGET)
     parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
+    parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
+    parser.add_argument("--top-p", type=float)
+    parser.add_argument("--stop", action="append")
     parser.add_argument(
         "--token-limit-parameter",
         choices=["max_completion_tokens", "max_tokens"],
         default="max_completion_tokens",
     )
     args = parser.parse_args()
+    stop = args.stop if args.stop is not None else DEFAULT_STOP
     try:
         validate_env()
     except RuntimeError as exc:
@@ -114,6 +126,9 @@ def main() -> int:
             budget=args.context_budget,
             max_output_tokens=args.max_output_tokens,
             token_limit_parameter=args.token_limit_parameter,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            stop=stop,
         )
         if args.prompt is not None or args.compare or args.chat:
             client = create_client()
@@ -134,7 +149,13 @@ def main() -> int:
                     print(ask_model(client, prompt, history))
         elif args.compare:
             compare_prompts(
-                client, args.context_budget, args.max_output_tokens, args.token_limit_parameter
+                client,
+                args.context_budget,
+                args.max_output_tokens,
+                args.token_limit_parameter,
+                args.temperature,
+                args.top_p,
+                stop,
             )
         else:
             print(ask_model(client, args.prompt, history))
