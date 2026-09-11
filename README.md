@@ -88,10 +88,20 @@ python src/app.py --compare
 The app sends an explicit system message for role, scope, tone, and fallback
 behavior, followed by the user prompt for the current task.
 
+Chat requests use grounded-answer defaults: `temperature=0.1`, an output cap of
+300 tokens, and `stop=["\\n\\nUser:"]`. Use `--temperature` for a different
+randomness level, `--max-output-tokens` to change the output cap, repeat
+`--stop` to provide custom stop sequences, or use `--top-p` instead of
+temperature when tuning nucleus sampling. For example:
+
+```bash
+python src/app.py --prompt "What is our refund window?" --temperature 0 --max-output-tokens 150
+```
+
 ## Context window management
 
 `ConversationHistory` preserves the system message and removes complete oldest
-user/assistant pairs. It rejects a newest turn that cannot fit, reserves 512 output
+user/assistant pairs. It rejects a newest turn that cannot fit, reserves 300 output
 tokens within a default 6,000-unit context budget, and restores prior history when
 a request fails. The estimate counts UTF-8 bytes plus message framing allowances;
 it is deliberately conservative, not exact model tokenization or billing usage.
@@ -99,7 +109,7 @@ Set the budget below your provider's actual context limit. Tool calls and
 multimodal messages are not supported by this text-only history manager.
 
 ```bash
-python src/app.py --chat --context-budget 6000 --max-output-tokens 512
+python src/app.py --chat --context-budget 6000 --max-output-tokens 300
 ```
 
 Enter `/exit` or EOF to quit. The output cap defaults to `max_completion_tokens`;
