@@ -15,6 +15,7 @@ from experiments.parameter_experiments import (
     summarize,
     write_report,
 )
+from prompts.answer import ANSWER, render
 
 
 def response(content="answer", finish_reason="stop", usage=True):
@@ -30,6 +31,15 @@ def response(content="answer", finish_reason="stop", usage=True):
         if usage
         else None,
     )
+
+
+def test_answer_template_renders_runtime_values_and_requires_sources():
+    prompt = render(ANSWER, context="Approved guidance", question="What applies?")
+    assert "Approved guidance" in prompt
+    assert "What applies?" in prompt
+    assert "Cite the source document" in prompt
+    assert "{context}" not in prompt
+    assert "{question}" not in prompt
 
 
 def test_plan_varies_one_control_with_repetitions():

@@ -12,12 +12,18 @@ from statistics import mean
 from dotenv import load_dotenv
 from openai import APIError, OpenAI
 
-BASE_PROMPT = """Answer using only this context:
-HealthCompass stores official guidance with versions, effective dates, regions,
-and approval status. Current approved guidance is applicable only to its stated
-region and effective period. Superseded guidance is retained for historical use.
-Question: Why should the assistant check approval, region and effective date?
-Give a short explanation. End with the literal marker END_OF_ANSWER."""
+from prompts.answer import ANSWER, render
+
+EXPERIMENT_CONTEXT = (
+    "HealthCompass stores official guidance with versions, effective dates, regions, "
+    "and approval status. Current approved guidance is applicable only to its stated "
+    "region and effective period. Superseded guidance is retained for historical use."
+)
+EXPERIMENT_QUESTION = (
+    "Why should the assistant check approval, region and effective date? "
+    "Give a short explanation. End with the literal marker END_OF_ANSWER."
+)
+BASE_PROMPT = render(ANSWER, context=EXPERIMENT_CONTEXT, question=EXPERIMENT_QUESTION)
 
 
 def experiment_cases(
