@@ -1,6 +1,6 @@
 # HealthCompass — RAG Foundation
 
-HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local TXT/PDF document loading and cleaning.
+HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local TXT/Markdown/HTML/PDF document loading and cleaning.
 
 ## Project structure
 
@@ -133,15 +133,17 @@ healthcompass-load tests/fixtures/guidance.txt --metadata '{"version":"1","regio
 python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py
 ```
 
-The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM)
-and text-based PDF via PyMuPDF. Output is a JSON array with one record per PDF
-page, or one record for a TXT file:
+The loader runs offline without API keys. It supports UTF-8 TXT and Markdown
+(including a BOM), HTML/HTM tag stripping, and text-based PDF via PyMuPDF.
+Output is a JSON array with one record per PDF page, or one record for a
+TXT, Markdown, or HTML file:
 
 - `document_id`: SHA-256 of the original file bytes; identifies file content,
   not the logical guideline or its editorial version.
 - `source` and `filename`: resolved local path and original filename.
 - `page_number`: one-based PDF page number; `null` for TXT.
-- `text`: extracted text, without additional cleaning or chunking.
+- `text`: extracted text, without additional cleaning or chunking. HTML tags are
+    removed and block elements remain separated by newlines.
 - `metadata`: caller-supplied string fields such as version, authority, region,
   status, source URL, and effective date. These are preserved, not verified.
 

@@ -28,6 +28,33 @@ def test_txt_preserves_text_metadata_and_identity(tmp_path):
     assert load_document(copy)[0].document_id != page.document_id
 
 
+@pytest.mark.parametrize(
+    "suffix, content, expected",
+    [
+        (".md", "# Guidance\n\nUse 0.5 mg.", "# Guidance\n\nUse 0.5 mg."),
+        (".HTML", "<h1>Guidance</h1><p>Use <strong>0.5 mg</strong>.</p>", "Guidance\nUse 0.5 mg."),
+        (".htm", "<p>First</p><p>Second &amp; third</p>", "First\nSecond & third"),
+    ],
+)
+def test_text_and_html_formats_load_as_one_page(tmp_path, suffix, content, expected):
+    path = tmp_path / f"guidance{suffix}"
+    path.write_text(content, encoding="utf-8")
+
+    page = load_document(path, metadata={"version": "2"})[0]
+
+    assert page.text == expected
+    assert page.page_number is None
+    assert page.filename == path.name
+    assert page.metadata == {"version": "2"}
+
+
+def test_html_loader_tolerates_unclosed_markup(tmp_path):
+    path = tmp_path / "guidance.html"
+    path.write_text("<main><p>Current guidance", encoding="utf-8")
+
+    assert load_document(path)[0].text == "Current guidance"
+
+
 def test_pdf_preserves_blank_pages_and_positions(tmp_path):
     path = tmp_path / "guidance.PDF"
     with pymupdf.open() as doc:
