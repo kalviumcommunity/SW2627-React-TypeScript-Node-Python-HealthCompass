@@ -10,10 +10,12 @@ from .loader import DocumentLoadError, load_document
 
 
 def main() -> int:
+  feature/3.19-multi-format-intake
     parser = argparse.ArgumentParser(
         description="Extract TXT, Markdown, HTML, or text-based PDF as JSON."
     )
-    parser.add_argument("path", help="Local document path")
+     parser = argparse.ArgumentParser(description="Extract TXT, Markdown, HTML, or text-based PDF as JSON.")
+     parser.add_argument("path", help="Local document path")
     parser.add_argument("--metadata", default="{}", help="JSON object with string keys and values")
     parser.add_argument(
         "--clean", action="store_true", help="Include cleaned text and raw extraction"
