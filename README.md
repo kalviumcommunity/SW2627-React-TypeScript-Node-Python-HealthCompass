@@ -1,6 +1,6 @@
 # HealthCompass — RAG Foundation
 
-HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local TXT/PDF document loading and cleaning.
+HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local multi-format document loading (TXT, PDF, Markdown, HTML) with cleaning.
 
 ## Project structure
 
@@ -14,8 +14,8 @@ SW2627-React-TypeScript-Node-Python-HealthCompass/
 │   ├── app.py             # chat completion and configuration examples
 │   └── healthcompass/
 │       ├── chat/          # bounded conversation history
-│       └── ingestion/     # TXT/PDF loading, cleaning, and JSON CLI
-├── experiments/           # generation parameter comparisons
+│       └── ingestion/     # multi-format loading, cleaning, corpus intake, and JSON CLI
+├── experiments/           # generation parameter comparisons and document intake demos
 ├── tests/
 │   ├── fixtures/          # synthetic source documents
 │   └── test_*.py          # ingestion, cleaning, chat, and experiment tests
@@ -133,14 +133,14 @@ healthcompass-load tests/fixtures/guidance.txt --metadata '{"version":"1","regio
 python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py
 ```
 
-The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM)
-and text-based PDF via PyMuPDF. Output is a JSON array with one record per PDF
-page, or one record for a TXT file:
+The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM),
+Markdown (.md), HTML (.html, .htm), and text-based PDF via PyMuPDF. Output is a JSON
+array with one record per PDF page, or one record for TXT/Markdown/HTML files:
 
 - `document_id`: SHA-256 of the original file bytes; identifies file content,
   not the logical guideline or its editorial version.
 - `source` and `filename`: resolved local path and original filename.
-- `page_number`: one-based PDF page number; `null` for TXT.
+- `page_number`: one-based PDF page number; `null` for TXT/Markdown/HTML.
 - `text`: extracted text, without additional cleaning or chunking.
 - `metadata`: caller-supplied string fields such as version, authority, region,
   status, source URL, and effective date. These are preserved, not verified.
@@ -151,14 +151,65 @@ from healthcompass.ingestion import load_document
 pages = load_document("data/guidance.pdf", metadata={"version": "2"})
 ```
 
-Blank PDF pages remain in the output to preserve original positions. Files with
-no extractable text, encrypted PDFs requiring a password, invalid PDFs, missing
-files, unsupported formats, and invalid UTF-8 produce clear errors. CLI failures
-write to stderr and exit with status 1. Scanned pages require a future OCR step;
-partially scanned PDFs may contain blank extracted pages and need review.
-DOCX, HTML, CSV, chunking, indexing, and upload endpoints are future work.
-The loader reads the whole file into memory and is intended for local intake;
-future upload endpoints must enforce file-size limits.
+### Multi-format support
+
+The loader converts different document formats to plain text for the RAG pipeline:
+
+- **PDF**: Uses PyMuPDF to extract text from each page. Handles multi-page documents and preserves page numbers.
+- **TXT**: Reads UTF-8 encoded text files with BOM support.
+- **Markdown (.md)**: Reads UTF-8 encoded Markdown files, preserving formatting for downstream processing.
+- **HTML (.html, .htm)**: Uses BeautifulSoup to extract readable text, removing HTML tags and preserving content structure.
+
+### Corpus ingestion
+
+For batch processing multiple documents, use the corpus ingestion function:
+
+```python
+from healthcompass.ingestion import ingest_corpus
+
+result = ingest_corpus("data/", metadata={"version": "1"})
+print(f"Loaded: {len(result.loaded)} documents")
+print(f"Skipped: {len(result.skipped)} files")
+```
+
+Or use the demo script:
+
+```bash
+python experiments/document_intake.py data --corpus
+```
+
+The corpus ingestion recursively scans directories, loads all supported formats,
+and continues processing even when individual files fail. This ensures one bad
+file won't terminate the entire ingestion process.
+
+### Source identity preservation
+
+Every successfully loaded document preserves its source identity:
+
+- Original filename is always available for RAG citations
+- Full source path is retained for traceability
+- Document ID (SHA-256 hash) identifies content uniquely
+- Metadata preserves caller-supplied descriptive fields
+
+### Error handling
+
+The loader uses controlled exception handling:
+
+- Blank PDF pages remain in output to preserve original positions
+- Files with no extractable text, encrypted PDFs, invalid PDFs, missing files,
+  unsupported formats, and invalid UTF-8 produce clear errors
+- Corpus ingestion continues after individual file failures
+- CLI failures write to stderr and exit with status 1
+- Scanned pages require a future OCR step; partially scanned PDFs may contain
+  blank extracted pages and need review
+
+### Limitations
+
+- PDF text extraction may fail or return little/no text for scanned/image-only PDFs
+- OCR is not implemented; scanned PDFs require a future OCR step
+- The loader reads whole files into memory; intended for local intake
+- Future upload endpoints must enforce file-size limits
+- DOCX, CSV, chunking, indexing, and upload endpoints are future work
 
 ## Text cleaning — Sprint task 3.20
 
