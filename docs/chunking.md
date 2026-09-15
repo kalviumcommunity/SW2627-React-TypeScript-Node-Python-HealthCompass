@@ -55,3 +55,19 @@ changes do not change IDs and must be propagated separately during future indexi
 `input_sha256` allows a consumer to check that it is using the matching page text.
 Chunking version is currently `1`. This establishes basic source traceability;
 more detailed citation metadata and index integration are separate sprint work.
+
+
+## Compatibility with the earlier single-page baseline
+
+The merged Task-3.21 baseline remains available through `fixed_size_chunks`,
+`paragraph_chunks`, `Chunk`, `ChunkingStats`, and `calculate_chunk_stats`.
+`chunk_document(page, strategy="fixed", chunk_size=500, overlap=100)` retains
+that API. Fixed overlap settings are validated to prevent a non-advancing loop.
+The baseline paragraph helper emits one chunk per paragraph without a size limit.
+
+For bounded chunks with page offsets and content-based IDs, use `chunk_page(page)`
+or `chunk_document(pages, max_chars=1000)` with a page iterable. The baseline's
+sequential integer IDs must not be treated as globally unique index identifiers.
+Character overlap in that baseline is not token-aware sizing (Task 3.23).
+Its earlier comparison script is retained as `experiments/basic_chunking_comparison.py`;
+use `experiments/chunking_comparison.py` for the bounded strategies documented above.

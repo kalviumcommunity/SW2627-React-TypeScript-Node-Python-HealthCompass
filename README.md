@@ -6,7 +6,7 @@ HealthCompass is a RAG application for finding and verifying official public hea
 
 ```text
 SW2627-React-TypeScript-Node-Python-HealthCompass/
-├── .github/               # CI workflow and PR template
+├── .github/               # CI workflow
 ├── data/                  # local source documents, ignored by Git
 ├── outputs/               # placeholder for generated output
 ├── src/
@@ -288,7 +288,8 @@ chunks = chunk_document(pages, strategy="paragraph", max_chars=1000)
 Each chunk retains source/page identity, metadata, a deterministic ID, and offsets
 into its input text. Empty pages yield no chunks. See [chunking design and measured
 comparison](docs/chunking.md) for limits, offset semantics, and the default choice.
-Token-aware sizing, overlap, embeddings, and retrieval are not implemented here.
+The earlier single-page baseline retains character overlap; the bounded pipeline
+adds no overlap. Token-aware sizing, embeddings, and retrieval remain future work.
 
 ## Testing and team workflow
 
