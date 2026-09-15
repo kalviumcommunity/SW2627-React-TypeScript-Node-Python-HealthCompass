@@ -6,7 +6,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from healthcompass.ingestion import DocumentLoadError, load_document, ingest_corpus
+from healthcompass.ingestion import DocumentLoadError, ingest_corpus, load_document
 from healthcompass.ingestion.cli import main
 
 FIXTURE = Path(__file__).parent / "fixtures" / "guidance.txt"
@@ -116,7 +116,10 @@ def test_cli_invalid_metadata(monkeypatch, capsys, metadata):
 def test_markdown_loads_successfully(tmp_path):
     """Test that Markdown files load successfully."""
     md_file = tmp_path / "guideline.md"
-    md_file.write_text("# Vaccination Guidelines\n\nVaccination guidance should be checked against latest version.", encoding="utf-8")
+    md_file.write_text(
+        "# Vaccination Guidelines\n\nVaccination guidance should be checked against latest version.",
+        encoding="utf-8",
+    )
     pages = load_document(md_file, metadata={"version": "1"})
     assert len(pages) == 1
     assert pages[0].page_number is None
@@ -128,7 +131,10 @@ def test_markdown_loads_successfully(tmp_path):
 def test_html_loads_successfully(tmp_path):
     """Test that HTML files load successfully."""
     html_file = tmp_path / "advisory.html"
-    html_file.write_text("<html><body><h1>Emergency Advisory</h1><p>Vaccination guidance should be checked.</p></body></html>", encoding="utf-8")
+    html_file.write_text(
+        "<html><body><h1>Emergency Advisory</h1><p>Vaccination guidance should be checked.</p></body></html>",
+        encoding="utf-8",
+    )
     pages = load_document(html_file, metadata={"region": "District A"})
     assert len(pages) == 1
     assert pages[0].page_number is None
@@ -141,7 +147,9 @@ def test_html_loads_successfully(tmp_path):
 def test_htm_extension_loads_successfully(tmp_path):
     """Test that .htm files load successfully."""
     htm_file = tmp_path / "advisory.htm"
-    htm_file.write_text("<html><body><p>Public health guidance.</p></body></html>", encoding="utf-8")
+    htm_file.write_text(
+        "<html><body><p>Public health guidance.</p></body></html>", encoding="utf-8"
+    )
     pages = load_document(htm_file)
     assert len(pages) == 1
     assert "Public health guidance" in pages[0].text
@@ -163,13 +171,13 @@ def test_corpus_ingestion_with_mixed_formats(tmp_path):
     (tmp_path / "doc2.md").write_text("# Markdown\nContent", encoding="utf-8")
     (tmp_path / "doc3.html").write_text("<html><body>HTML content</body></html>", encoding="utf-8")
     (tmp_path / "doc4.xyz").write_text("Unsupported", encoding="utf-8")
-    
+
     result = ingest_corpus(tmp_path)
-    
+
     assert len(result.loaded) == 3  # 3 successful files
     assert len(result.skipped) == 1  # 1 unsupported file
     assert result.total_files == 4
-    
+
     # Check that source filenames are preserved
     filenames = {page.filename for page in result.loaded}
     assert "doc1.txt" in filenames
@@ -183,14 +191,14 @@ def test_corpus_ingestion_continues_after_failure(tmp_path):
     (tmp_path / "valid.txt").write_text("Valid content", encoding="utf-8")
     (tmp_path / "corrupted.pdf").write_bytes(b"Not a PDF")
     (tmp_path / "another.txt").write_text("Another valid file", encoding="utf-8")
-    
+
     result = ingest_corpus(tmp_path)
-    
+
     # Should load 2 valid files and skip 1 corrupted file
     assert len(result.loaded) == 2
     assert len(result.skipped) == 1
     assert result.total_files == 3
-    
+
     # Check that valid files were loaded despite corrupted file
     filenames = {page.filename for page in result.loaded}
     assert "valid.txt" in filenames
@@ -204,7 +212,7 @@ def test_empty_markdown_and_html(tmp_path):
     empty_md.write_text("", encoding="utf-8")
     with pytest.raises(DocumentLoadError, match="empty"):
         load_document(empty_md)
-    
+
     # Empty HTML
     empty_html = tmp_path / "empty.html"
     empty_html.write_text("<html><body></body></html>", encoding="utf-8")
@@ -215,11 +223,54 @@ def test_empty_markdown_and_html(tmp_path):
 def test_source_identity_preserved_in_corpus(tmp_path):
     """Test that source identity is preserved in corpus ingestion."""
     (tmp_path / "test.txt").write_text("Test content", encoding="utf-8")
-    
+
     result = ingest_corpus(tmp_path)
-    
+
     assert len(result.loaded) == 1
     page = result.loaded[0]
     assert page.filename == "test.txt"
     assert page.source.endswith("test.txt")
     assert page.document_id  # Should have a document ID
+
+
+def test_raw_text_line_endings_are_preserved_until_cleaning(tmp_path):
+    from healthcompass.ingestion import clean_page
+
+    path = tmp_path / "raw.txt"
+    path.write_bytes(b"First\r\nSecond\rThird")
+    page = load_document(path)[0]
+    assert page.text == "First\r\nSecond\rThird"
+    cleaned = clean_page(page)
+    assert cleaned.original_text == page.text
+    assert cleaned.text == "First\nSecond\nThird"
+
+
+def test_html_rejects_invalid_encoding_and_retains_block_boundaries(tmp_path):
+    path = tmp_path / "guide.html"
+    path.write_bytes(b"<p>5\xffmg</p>")
+    with pytest.raises(DocumentLoadError, match="UTF-8"):
+        load_document(path)
+    path.write_text(
+        "<style>noise</style><p>Do <b>not</b> ignore.</p><p>Next section.</p>", encoding="utf-8"
+    )
+    text = load_document(path)[0].text
+    assert "noise" not in text
+    assert "Do not ignore." in text
+    assert "\n\n" in text
+
+
+def test_corpus_counts_files_separately_from_pages_and_tracks_paths(tmp_path):
+    for name in ["a", "b"]:
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "same.txt").write_text(name, encoding="utf-8")
+        (folder / "bad.xyz").write_text("bad", encoding="utf-8")
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((72, 72), "First")
+        doc.new_page().insert_text((72, 72), "Second")
+        doc.save(tmp_path / "pages.pdf")
+    result = ingest_corpus(tmp_path)
+    assert result.loaded_files == 3
+    assert len(result.loaded) == 4
+    assert [path for path, _ in result.skipped] == ["a/bad.xyz", "b/bad.xyz"]
+    assert result.total_files == result.loaded_files + len(result.skipped)
