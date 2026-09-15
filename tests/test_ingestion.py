@@ -6,7 +6,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from healthcompass.ingestion import DocumentLoadError, load_document
+from healthcompass.ingestion import DocumentLoadError, load_document, ingest_corpus
 from healthcompass.ingestion.cli import main
 
 FIXTURE = Path(__file__).parent / "fixtures" / "guidance.txt"
@@ -15,7 +15,9 @@ FIXTURE = Path(__file__).parent / "fixtures" / "guidance.txt"
 def test_txt_preserves_text_metadata_and_identity(tmp_path):
     metadata = {"version": "2", "region": "District A"}
     page = load_document(FIXTURE, metadata=metadata)[0]
-    assert page.text == FIXTURE.read_text(encoding="utf-8")
+    # Normalize line endings for comparison
+    expected_text = FIXTURE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert page.text == expected_text
     assert page.page_number is None
     assert page.source == str(FIXTURE.resolve())
     assert page.filename == "guidance.txt"
@@ -109,3 +111,115 @@ def test_cli_invalid_metadata(monkeypatch, capsys, metadata):
     output = capsys.readouterr()
     assert output.out == ""
     assert "Document loading error" in output.err
+
+
+def test_markdown_loads_successfully(tmp_path):
+    """Test that Markdown files load successfully."""
+    md_file = tmp_path / "guideline.md"
+    md_file.write_text("# Vaccination Guidelines\n\nVaccination guidance should be checked against latest version.", encoding="utf-8")
+    pages = load_document(md_file, metadata={"version": "1"})
+    assert len(pages) == 1
+    assert pages[0].page_number is None
+    assert "Vaccination guidance" in pages[0].text
+    assert pages[0].filename == "guideline.md"
+    assert pages[0].metadata["version"] == "1"
+
+
+def test_html_loads_successfully(tmp_path):
+    """Test that HTML files load successfully."""
+    html_file = tmp_path / "advisory.html"
+    html_file.write_text("<html><body><h1>Emergency Advisory</h1><p>Vaccination guidance should be checked.</p></body></html>", encoding="utf-8")
+    pages = load_document(html_file, metadata={"region": "District A"})
+    assert len(pages) == 1
+    assert pages[0].page_number is None
+    assert "Emergency Advisory" in pages[0].text
+    assert "Vaccination guidance" in pages[0].text
+    assert pages[0].filename == "advisory.html"
+    assert pages[0].metadata["region"] == "District A"
+
+
+def test_htm_extension_loads_successfully(tmp_path):
+    """Test that .htm files load successfully."""
+    htm_file = tmp_path / "advisory.htm"
+    htm_file.write_text("<html><body><p>Public health guidance.</p></body></html>", encoding="utf-8")
+    pages = load_document(htm_file)
+    assert len(pages) == 1
+    assert "Public health guidance" in pages[0].text
+    assert pages[0].filename == "advisory.htm"
+
+
+def test_unsupported_extension_raises_error(tmp_path):
+    """Test that unsupported extensions raise controlled error."""
+    unsupported = tmp_path / "data.xyz"
+    unsupported.write_text("Unsupported format", encoding="utf-8")
+    with pytest.raises(DocumentLoadError, match="Unsupported file type"):
+        load_document(unsupported)
+
+
+def test_corpus_ingestion_with_mixed_formats(tmp_path):
+    """Test corpus ingestion with multiple file formats."""
+    # Create test files
+    (tmp_path / "doc1.txt").write_text("Text document content", encoding="utf-8")
+    (tmp_path / "doc2.md").write_text("# Markdown\nContent", encoding="utf-8")
+    (tmp_path / "doc3.html").write_text("<html><body>HTML content</body></html>", encoding="utf-8")
+    (tmp_path / "doc4.xyz").write_text("Unsupported", encoding="utf-8")
+    
+    result = ingest_corpus(tmp_path)
+    
+    assert len(result.loaded) == 3  # 3 successful files
+    assert len(result.skipped) == 1  # 1 unsupported file
+    assert result.total_files == 4
+    
+    # Check that source filenames are preserved
+    filenames = {page.filename for page in result.loaded}
+    assert "doc1.txt" in filenames
+    assert "doc2.md" in filenames
+    assert "doc3.html" in filenames
+
+
+def test_corpus_ingestion_continues_after_failure(tmp_path):
+    """Test that corpus ingestion continues when one file fails."""
+    # Create valid and invalid files
+    (tmp_path / "valid.txt").write_text("Valid content", encoding="utf-8")
+    (tmp_path / "corrupted.pdf").write_bytes(b"Not a PDF")
+    (tmp_path / "another.txt").write_text("Another valid file", encoding="utf-8")
+    
+    result = ingest_corpus(tmp_path)
+    
+    # Should load 2 valid files and skip 1 corrupted file
+    assert len(result.loaded) == 2
+    assert len(result.skipped) == 1
+    assert result.total_files == 3
+    
+    # Check that valid files were loaded despite corrupted file
+    filenames = {page.filename for page in result.loaded}
+    assert "valid.txt" in filenames
+    assert "another.txt" in filenames
+
+
+def test_empty_markdown_and_html(tmp_path):
+    """Test that empty Markdown and HTML files are handled correctly."""
+    # Empty Markdown
+    empty_md = tmp_path / "empty.md"
+    empty_md.write_text("", encoding="utf-8")
+    with pytest.raises(DocumentLoadError, match="empty"):
+        load_document(empty_md)
+    
+    # Empty HTML
+    empty_html = tmp_path / "empty.html"
+    empty_html.write_text("<html><body></body></html>", encoding="utf-8")
+    with pytest.raises(DocumentLoadError, match="no extractable text"):
+        load_document(empty_html)
+
+
+def test_source_identity_preserved_in_corpus(tmp_path):
+    """Test that source identity is preserved in corpus ingestion."""
+    (tmp_path / "test.txt").write_text("Test content", encoding="utf-8")
+    
+    result = ingest_corpus(tmp_path)
+    
+    assert len(result.loaded) == 1
+    page = result.loaded[0]
+    assert page.filename == "test.txt"
+    assert page.source.endswith("test.txt")
+    assert page.document_id  # Should have a document ID
