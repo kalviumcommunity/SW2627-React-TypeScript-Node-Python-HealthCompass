@@ -107,14 +107,18 @@ def main() -> int:
     parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
     parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
     parser.add_argument("--top-p", type=float)
-    parser.add_argument("--stop", action="append")
+    stops = parser.add_mutually_exclusive_group()
+    stops.add_argument("--stop", action="append")
+    stops.add_argument(
+        "--no-stop", action="store_true", help="Omit stop sequences for unsupported providers"
+    )
     parser.add_argument(
         "--token-limit-parameter",
         choices=["max_completion_tokens", "max_tokens"],
         default="max_completion_tokens",
     )
     args = parser.parse_args()
-    stop = args.stop if args.stop is not None else DEFAULT_STOP
+    stop = [] if args.no_stop else (args.stop if args.stop is not None else DEFAULT_STOP)
     try:
         validate_env()
     except RuntimeError as exc:

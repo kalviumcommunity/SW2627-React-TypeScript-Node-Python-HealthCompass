@@ -156,3 +156,16 @@ def test_invalid_role_sequence_does_not_mutate_history():
     with pytest.raises(ValueError, match="alternate"):
         trim(messages)
     assert messages == previous
+
+
+@pytest.mark.parametrize("stop", ["END", [1], [""], ["a", "b", "c", "d", "e"]])
+def test_stop_sequences_reject_invalid_types(stop):
+    with pytest.raises(ValueError, match="stop"):
+        ConversationHistory(stop=stop)
+
+
+def test_empty_stop_list_omits_unsupported_control(monkeypatch):
+    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    client = client_with()
+    ask_model(client, "question", ConversationHistory(stop=[]))
+    assert "stop" not in client.chat.completions.create.call_args.kwargs

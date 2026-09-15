@@ -12,7 +12,7 @@ from statistics import mean
 from dotenv import load_dotenv
 from openai import APIError, OpenAI
 
-from prompts.answer import ANSWER, render
+from healthcompass.prompts.answer import ANSWER, render
 
 EXPERIMENT_CONTEXT = (
     "HealthCompass stores official guidance with versions, effective dates, regions, "

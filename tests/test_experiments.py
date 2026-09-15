@@ -15,7 +15,7 @@ from experiments.parameter_experiments import (
     summarize,
     write_report,
 )
-from prompts.answer import ANSWER, render
+from healthcompass.prompts.answer import ANSWER, render
 
 
 def response(content="answer", finish_reason="stop", usage=True):
