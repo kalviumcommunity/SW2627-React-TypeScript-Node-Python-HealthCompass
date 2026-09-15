@@ -1,6 +1,7 @@
 """Public document intake API."""
 
-from .chunking import Chunk, ChunkingStats, calculate_chunk_stats, chunk_document
+from .basic_chunking import Chunk, ChunkingStats, calculate_chunk_stats
+from .chunking import DocumentChunk, chunk_document, chunk_page
 from .cleaning import CleanedPage, clean_page, clean_text
 from .loader import (
     CorpusIngestionResult,
@@ -11,6 +12,12 @@ from .loader import (
 )
 
 __all__ = [
+    "Chunk",
+    "ChunkingStats",
+    "calculate_chunk_stats",
+    "DocumentChunk",
+    "chunk_document",
+    "chunk_page",
     "DocumentLoadError",
     "DocumentPage",
     "load_document",
@@ -19,8 +26,4 @@ __all__ = [
     "clean_text",
     "CorpusIngestionResult",
     "ingest_corpus",
-    "Chunk",
-    "ChunkingStats",
-    "calculate_chunk_stats",
-    "chunk_document",
 ]

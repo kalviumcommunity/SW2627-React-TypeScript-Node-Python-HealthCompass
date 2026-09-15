@@ -6,8 +6,8 @@
 
 Strategy              Chunk Count    Avg Size    Min Size    Max Size
 --------------------------------------------------------------
-Fixed-size + overlap  9              489        399        500       
-Paragraph-based       17             210        26         329       
+Fixed-size + overlap  9              489        399        500
+Paragraph-based       17             210        26         329
 
 ## Sample Chunks
 
@@ -25,7 +25,7 @@ This document provides current approved guidance for vaccination protocols in pu
 
 Section 1: Core Vaccination Principles
 
-Vaccination guidance should always be checked against the latest approved official 
+Vaccination guidance should always be checked against the latest approved official
 ```
 
 ### Chunk 1

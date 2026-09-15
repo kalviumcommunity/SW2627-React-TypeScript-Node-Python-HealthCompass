@@ -1,20 +1,20 @@
 # HealthCompass — RAG Foundation
 
-
+HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local multi-format document loading (TXT, PDF, Markdown, HTML) with cleaning and character-based chunking.
 
 ## Project structure
 
 ```text
 SW2627-React-TypeScript-Node-Python-HealthCompass/
-├── .github/               # CI workflow and PR template
+├── .github/               # CI workflow
 ├── data/                  # local source documents, ignored by Git
-├── prompts/               # placeholder for future prompt templates
 ├── outputs/               # placeholder for generated output
 ├── src/
 │   ├── app.py             # chat completion and configuration examples
 │   └── healthcompass/
+│       ├── prompts/       # installed reusable prompt templates
 │       ├── chat/          # bounded conversation history
-│       └── ingestion/     # multi-format loading, cleaning, chunking, corpus intake, and JSON CLI
+│       └── ingestion/     # multi-format loading, cleaning, corpus intake, and JSON CLI
 ├── experiments/           # generation parameter comparisons and document intake demos
 ├── tests/
 │   ├── fixtures/          # synthetic source documents
@@ -53,7 +53,7 @@ python -m pip install -r requirements.txt -e ".[dev]"
 For document loading and its tests only, use `python -m pip install -e ".[dev]"`.
 This smaller installation does not install the dependencies for `src/app.py`
 or the chat/experiment regression tests. Run only the ingestion and cleaning
-tests with it: `python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py`.
+tests with it: `python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py tests/test_chunking.py`.
 Dependency ranges are declared in `requirements.txt` and `pyproject.toml`;
 there is currently no lockfile guaranteeing identical resolved versions.
 
@@ -114,6 +114,7 @@ python src/app.py --chat --context-budget 6000 --max-output-tokens 300
 
 Enter `/exit` or EOF to quit. The output cap defaults to `max_completion_tokens`;
 use `--token-limit-parameter max_tokens` only for providers requiring that field.
+Use `--no-stop` to omit stop sequences for providers that do not support them.
 See [parameter experiments](experiments/README.md) for repeated, measurable
 comparisons of generation settings.
 
@@ -130,26 +131,19 @@ Requires Python 3.11+. From the repository root, install the project and test to
 ```bash
 python -m pip install -e ".[dev]"
 healthcompass-load tests/fixtures/guidance.txt --metadata '{"version":"1","region":"District A"}'
-python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py
+python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py tests/test_chunking.py
 ```
 
- The loader runs offline without API keys. It supports UTF-8 TXT and Markdown
-(including a BOM), HTML/HTM tag stripping, and text-based PDF via PyMuPDF.
-Output is a JSON array with one record per PDF page, or one record for a
-TXT, Markdown, or HTML file:
- The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM),
+The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM),
 Markdown (.md), HTML (.html, .htm), and text-based PDF via PyMuPDF. Output is a JSON
 array with one record per PDF page, or one record for TXT/Markdown/HTML files:
- 
+
 - `document_id`: SHA-256 of the original file bytes; identifies file content,
   not the logical guideline or its editorial version.
 - `source` and `filename`: resolved local path and original filename.
- - `page_number`: one-based PDF page number; `null` for TXT.
-- `text`: extracted text, without additional cleaning or chunking. HTML tags are
-    removed and block elements remain separated by newlines.
- - `page_number`: one-based PDF page number; `null` for TXT/Markdown/HTML.
+- `page_number`: one-based PDF page number; `null` for TXT/Markdown/HTML.
 - `text`: extracted text, without additional cleaning or chunking.
- - `metadata`: caller-supplied string fields such as version, authority, region,
+- `metadata`: caller-supplied string fields such as version, authority, region,
   status, source URL, and effective date. These are preserved, not verified.
 
 ```python
@@ -165,7 +159,11 @@ The loader converts different document formats to plain text for the RAG pipelin
 - **PDF**: Uses PyMuPDF to extract text from each page. Handles multi-page documents and preserves page numbers.
 - **TXT**: Reads UTF-8 encoded text files with BOM support.
 - **Markdown (.md)**: Reads UTF-8 encoded Markdown files, preserving formatting for downstream processing.
-- **HTML (.html, .htm)**: Uses BeautifulSoup to extract readable text, removing HTML tags and preserving content structure.
+- **HTML (.html, .htm)**: Requires UTF-8, extracts text with block boundaries,
+  and excludes head/script/style/template content. Invalid bytes are rejected.
+
+TXT and Markdown line endings are preserved by loading; normalization belongs to
+`--clean`. HTML parsing is text extraction, not an OCR or table reconstruction step.
 
 ### Corpus ingestion
 
@@ -175,7 +173,7 @@ For batch processing multiple documents, use the corpus ingestion function:
 from healthcompass.ingestion import ingest_corpus
 
 result = ingest_corpus("data/", metadata={"version": "1"})
-print(f"Loaded: {len(result.loaded)} documents")
+print(f"Loaded: {result.loaded_files} documents, {len(result.loaded)} pages")
 print(f"Skipped: {len(result.skipped)} files")
 ```
 
@@ -186,8 +184,11 @@ python experiments/document_intake.py data --corpus
 ```
 
 The corpus ingestion recursively scans directories, loads all supported formats,
-and continues processing even when individual files fail. This ensures one bad
-file won't terminate the entire ingestion process.
+and continues after expected document-load failures. Files are processed in sorted
+path order; skipped entries retain relative paths, so duplicate filenames remain
+traceable. Symlinks are skipped. Unexpected programming errors are not hidden as
+ordinary skipped files. The demo exits nonzero if any file is skipped or nothing
+loads, while still printing the partial result.
 
 ### Source identity preservation
 
@@ -216,63 +217,7 @@ The loader uses controlled exception handling:
 - OCR is not implemented; scanned PDFs require a future OCR step
 - The loader reads whole files into memory; intended for local intake
 - Future upload endpoints must enforce file-size limits
-- DOCX, CSV, indexing, and upload endpoints are future work
-
-## Document chunking — Sprint task 3.21
-
-For RAG processing, documents must be split into smaller chunks for vector search and retrieval. The chunking module provides two strategies:
-
-```python
-from healthcompass.ingestion import chunk_document, calculate_chunk_stats
-
-# Fixed-size chunking with overlap
-chunks = chunk_document(document, strategy="fixed", chunk_size=500, overlap=100)
-
-# Paragraph-based chunking
-chunks = chunk_document(document, strategy="paragraph")
-
-# Calculate statistics
-stats = calculate_chunk_stats(chunks)
-print(f"Chunk count: {stats.chunk_count}, avg size: {stats.avg_chunk_size:.0f}")
-```
-
-### Strategies
-
-**Fixed-size + overlap:**
-- Predictable chunk sizes (default: 500 characters)
-- Overlap preserves context across boundaries (default: 100 characters)
-- Works well with long documents and inconsistent formatting
-- Can split sentences/paragraphs, reducing semantic coherence
-
-**Paragraph-based:**
-- Preserves natural semantic boundaries
-- Paragraphs usually represent coherent ideas
-- Chunk sizes vary significantly based on document structure
-- Very short paragraphs can produce tiny chunks lacking context
-
-### Comparison and recommendation
-
-Based on testing with HealthCompass documents, fixed-size chunking with overlap is recommended as the default strategy. HealthCompass guidance documents often contain very short headings and section headers that would produce tiny chunks with paragraph-based chunking, reducing retrieval effectiveness.
-
-Run the comparison script to see actual results:
-
-```bash
-python experiments/chunking_comparison.py tests/fixtures/vaccination_guidance.txt
-```
-
-This generates a detailed comparison report in `experiments/outputs/chunking_comparison.md` with statistics, sample chunks, and trade-off analysis.
-
-### Context window relationship
-
-Chunk size relates to the context window in several important ways:
-
-- The context window is the maximum amount of text/tokens the model can process in one request
-- Chunks should be small enough that multiple retrieved chunks plus the user's question and system instructions fit comfortably
-- Very large chunks waste context space and can reduce retrieval precision
-- Very small chunks may lose necessary context
-- Chunk size should therefore leave room for multiple relevant chunks and the generated answer
-
-For HealthCompass, with typical context windows of 4K-8K tokens, chunk sizes of 500-1000 characters balance context preservation with retrieval precision.
+- DOCX, CSV, embeddings, indexing, and upload endpoints are future work
 
 ## Text cleaning — Sprint task 3.20
 
@@ -321,6 +266,31 @@ cleaned_pages = [clean_page(page, boilerplate_lines=["KNOWN HEADER"]) for page i
 under the same policy. Re-cleaning a `CleanedPage` uses its original extraction,
 allowing the removal policy to be changed without losing source text.
 
+## Document chunking — Sprint task 3.21
+
+```bash
+healthcompass-load tests/fixtures/chunking_guidance.txt --clean --chunk --max-chars 160
+healthcompass-load tests/fixtures/chunking_guidance.txt --clean --chunk --chunk-strategy fixed --max-chars 160
+```
+
+`--chunk` emits chunks instead of page records. It defaults to paragraph-aware
+splitting with a 1,000-character limit. `--chunk-strategy` and `--max-chars` require
+`--chunk`; cleaning remains separately opt-in. Without `--chunk`, loading and
+cleaning retain their existing JSON output contracts.
+
+```python
+from healthcompass.ingestion import chunk_document, clean_page, load_document
+
+pages = [clean_page(page) for page in load_document("data/guidance.pdf")]
+chunks = chunk_document(pages, strategy="paragraph", max_chars=1000)
+```
+
+Each chunk retains source/page identity, metadata, a deterministic ID, and offsets
+into its input text. Empty pages yield no chunks. See [chunking design and measured
+comparison](docs/chunking.md) for limits, offset semantics, and the default choice.
+The earlier single-page baseline retains character overlap; the bounded pipeline
+adds no overlap. Token-aware sizing, embeddings, and retrieval remain future work.
+
 ## Testing and team workflow
 
 ```bash
@@ -332,7 +302,7 @@ git diff --check
 ```
 
 The test suite covers chat history, experiment request/report handling, extraction,
-cleaning, chunking, metadata preservation, page positions, Unicode, invalid inputs, protected
+cleaning, metadata preservation, page positions, Unicode, invalid inputs, protected
 PDFs, and CLI output/errors. All API tests use mocked responses. CI installs the full application dependencies,
 checks lint and formatting, runs tests, compiles `src` and `experiments`, and checks
 chat configuration using placeholder credentials.
@@ -341,7 +311,7 @@ PDF fixtures are generated during tests, including multi-page, blank, and
 password-protected documents. CI runs these tests without external API calls.
 Keep real documents in ignored `data/`; commit only synthetic fixtures.
 
-Use branches such as `feature/3.20-text-cleaning` and Conventional Commits
-such as `feat(ingestion): add source-preserving text cleaning`. Keep each PR scoped
+Use branches such as `feature/3.21-document-chunking` and Conventional Commits
+such as `feat(ingestion): add document chunking strategies`. Keep each PR scoped
 to one sprint deliverable and include its task number, behavior, limitations,
 and validation results. Run `python -m pytest -q` before opening a PR.

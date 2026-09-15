@@ -78,8 +78,12 @@ class ConversationHistory:
             raise ValueError("Temperature must be between 0 and 2")
         if top_p is not None and (type(top_p) not in {int, float} or not 0 <= top_p <= 1):
             raise ValueError("top_p must be between 0 and 1")
-        if stop is not None and (not stop or any(not item for item in stop)):
-            raise ValueError("stop must contain non-empty sequences")
+        if stop is not None and (
+            not isinstance(stop, list)
+            or len(stop) > 4
+            or any(not isinstance(item, str) or not item for item in stop)
+        ):
+            raise ValueError("stop must be a list of up to four nonempty strings")
         self.budget = budget
         self.max_output_tokens = max_output_tokens
         self.token_limit_parameter = token_limit_parameter
@@ -117,7 +121,7 @@ class ConversationHistory:
             messages=candidate,
             temperature=self.temperature,
             **{self.token_limit_parameter: self.max_output_tokens},
-            stop=self.stop,
+            **({"stop": self.stop} if self.stop else {}),
             **({"top_p": self.top_p} if self.top_p is not None else {}),
         )
         if not response.choices:

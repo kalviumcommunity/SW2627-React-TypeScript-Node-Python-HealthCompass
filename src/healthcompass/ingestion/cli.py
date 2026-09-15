@@ -5,17 +5,16 @@ import json
 import sys
 from dataclasses import asdict
 
+from .chunking import DEFAULT_MAX_CHARS, chunk_document
 from .cleaning import clean_page
 from .loader import DocumentLoadError, load_document
 
 
 def main() -> int:
-  feature/3.19-multi-format-intake
     parser = argparse.ArgumentParser(
         description="Extract TXT, Markdown, HTML, or text-based PDF as JSON."
     )
-     parser = argparse.ArgumentParser(description="Extract TXT, Markdown, HTML, or text-based PDF as JSON.")
-     parser.add_argument("path", help="Local document path")
+    parser.add_argument("path", help="Local document path")
     parser.add_argument("--metadata", default="{}", help="JSON object with string keys and values")
     parser.add_argument(
         "--clean", action="store_true", help="Include cleaned text and raw extraction"
@@ -26,7 +25,14 @@ def main() -> int:
         default=[],
         help="Exact header/footer line to remove at page boundaries; repeatable",
     )
+    parser.add_argument("--chunk", action="store_true", help="Emit source-traceable chunks as JSON")
+    parser.add_argument("--chunk-strategy", choices=["fixed", "paragraph"])
+    parser.add_argument(
+        "--max-chars", type=int, help="Maximum characters per chunk (default: 1000)"
+    )
     args = parser.parse_args()
+    if not args.chunk and (args.chunk_strategy is not None or args.max_chars is not None):
+        parser.error("--chunk-strategy and --max-chars require --chunk")
     if args.remove_boilerplate_line and not args.clean:
         parser.error("--remove-boilerplate-line requires --clean")
     try:
@@ -38,6 +44,12 @@ def main() -> int:
             pages = [
                 clean_page(page, boilerplate_lines=args.remove_boilerplate_line) for page in pages
             ]
+        if args.chunk:
+            pages = chunk_document(
+                pages,
+                strategy=args.chunk_strategy or "paragraph",
+                max_chars=args.max_chars if args.max_chars is not None else DEFAULT_MAX_CHARS,
+            )
     except ValueError as exc:
         print(f"Document loading error: {exc}", file=sys.stderr)
         return 1
