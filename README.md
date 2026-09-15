@@ -1,6 +1,6 @@
 # HealthCompass — RAG Foundation
 
-HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local multi-format document loading (TXT, PDF, Markdown, HTML) with cleaning.
+HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, local multi-format document loading (TXT, PDF, Markdown, HTML) with cleaning, and document chunking strategies for RAG processing.
 
 ## Project structure
 
@@ -14,7 +14,7 @@ SW2627-React-TypeScript-Node-Python-HealthCompass/
 │   ├── app.py             # chat completion and configuration examples
 │   └── healthcompass/
 │       ├── chat/          # bounded conversation history
-│       └── ingestion/     # multi-format loading, cleaning, corpus intake, and JSON CLI
+│       └── ingestion/     # multi-format loading, cleaning, chunking, corpus intake, and JSON CLI
 ├── experiments/           # generation parameter comparisons and document intake demos
 ├── tests/
 │   ├── fixtures/          # synthetic source documents
@@ -209,7 +209,63 @@ The loader uses controlled exception handling:
 - OCR is not implemented; scanned PDFs require a future OCR step
 - The loader reads whole files into memory; intended for local intake
 - Future upload endpoints must enforce file-size limits
-- DOCX, CSV, chunking, indexing, and upload endpoints are future work
+- DOCX, CSV, indexing, and upload endpoints are future work
+
+## Document chunking — Sprint task 3.21
+
+For RAG processing, documents must be split into smaller chunks for vector search and retrieval. The chunking module provides two strategies:
+
+```python
+from healthcompass.ingestion import chunk_document, calculate_chunk_stats
+
+# Fixed-size chunking with overlap
+chunks = chunk_document(document, strategy="fixed", chunk_size=500, overlap=100)
+
+# Paragraph-based chunking
+chunks = chunk_document(document, strategy="paragraph")
+
+# Calculate statistics
+stats = calculate_chunk_stats(chunks)
+print(f"Chunk count: {stats.chunk_count}, avg size: {stats.avg_chunk_size:.0f}")
+```
+
+### Strategies
+
+**Fixed-size + overlap:**
+- Predictable chunk sizes (default: 500 characters)
+- Overlap preserves context across boundaries (default: 100 characters)
+- Works well with long documents and inconsistent formatting
+- Can split sentences/paragraphs, reducing semantic coherence
+
+**Paragraph-based:**
+- Preserves natural semantic boundaries
+- Paragraphs usually represent coherent ideas
+- Chunk sizes vary significantly based on document structure
+- Very short paragraphs can produce tiny chunks lacking context
+
+### Comparison and recommendation
+
+Based on testing with HealthCompass documents, fixed-size chunking with overlap is recommended as the default strategy. HealthCompass guidance documents often contain very short headings and section headers that would produce tiny chunks with paragraph-based chunking, reducing retrieval effectiveness.
+
+Run the comparison script to see actual results:
+
+```bash
+python experiments/chunking_comparison.py tests/fixtures/vaccination_guidance.txt
+```
+
+This generates a detailed comparison report in `experiments/outputs/chunking_comparison.md` with statistics, sample chunks, and trade-off analysis.
+
+### Context window relationship
+
+Chunk size relates to the context window in several important ways:
+
+- The context window is the maximum amount of text/tokens the model can process in one request
+- Chunks should be small enough that multiple retrieved chunks plus the user's question and system instructions fit comfortably
+- Very large chunks waste context space and can reduce retrieval precision
+- Very small chunks may lose necessary context
+- Chunk size should therefore leave room for multiple relevant chunks and the generated answer
+
+For HealthCompass, with typical context windows of 4K-8K tokens, chunk sizes of 500-1000 characters balance context preservation with retrieval precision.
 
 ## Text cleaning — Sprint task 3.20
 
@@ -269,7 +325,7 @@ git diff --check
 ```
 
 The test suite covers chat history, experiment request/report handling, extraction,
-cleaning, metadata preservation, page positions, Unicode, invalid inputs, protected
+cleaning, chunking, metadata preservation, page positions, Unicode, invalid inputs, protected
 PDFs, and CLI output/errors. All API tests use mocked responses. CI installs the full application dependencies,
 checks lint and formatting, runs tests, compiles `src` and `experiments`, and checks
 chat configuration using placeholder credentials.
