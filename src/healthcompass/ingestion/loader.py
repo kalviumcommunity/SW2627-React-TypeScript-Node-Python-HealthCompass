@@ -1,7 +1,9 @@
-"""Load local TXT, Markdown, HTML, and text-based PDF documents without altering extracted text."""
-
+ """Load local TXT, Markdown, HTML, and text-based PDF documents."""
+ """Load local TXT, Markdown, HTML, and text-based PDF documents without altering extracted text."""
+ 
 from dataclasses import dataclass
 from hashlib import sha256
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Mapping
 
@@ -13,9 +15,68 @@ class DocumentLoadError(ValueError):
     """A source could not be loaded into usable text."""
 
 
+class _HTMLTextExtractor(HTMLParser):
+    """Extract readable text while preserving useful HTML block boundaries."""
+
+    _BLOCK_TAGS = {
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "br",
+        "div",
+        "dl",
+        "dt",
+        "dd",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def text(self) -> str:
+        lines = (" ".join(line.split()) for line in "".join(self.parts).splitlines())
+        return "\n".join(line for line in lines if line)
+
+
 @dataclass(frozen=True)
 class DocumentPage:
-    """One source page; PDF page numbers are one-based, TXT has no page number."""
+    """One source page; PDF page numbers are one-based, text formats have none."""
 
     document_id: str
     source: str
@@ -45,12 +106,16 @@ def load_document(
     Supports TXT, PDF, Markdown (.md), and HTML (.html, .htm) formats.
     """
     source = Path(path).expanduser().resolve()
-    supported_formats = {".txt", ".pdf", ".md", ".html", ".htm"}
+     suffix = source.suffix.lower()
+    if suffix not in {".txt", ".md", ".html", ".htm", ".pdf"}:
+        raise DocumentLoadError(
+            "Unsupported file type; supported formats are TXT, Markdown, HTML, and PDF."
+     supported_formats = {".txt", ".pdf", ".md", ".html", ".htm"}
     if source.suffix.lower() not in supported_formats:
         raise DocumentLoadError(
             f"Unsupported file type: {source.suffix}. "
             f"Supported formats are TXT, PDF, Markdown (.md), and HTML (.html, .htm)."
-        )
+         )
     if metadata is not None and any(
         not isinstance(key, str) or not isinstance(value, str) for key, value in metadata.items()
     ):
@@ -62,7 +127,20 @@ def load_document(
     if not content:
         raise DocumentLoadError("Document is empty.")
 
-    suffix = source.suffix.lower()
+     if suffix in {".txt", ".md", ".html", ".htm"}:
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise DocumentLoadError("Text and HTML documents must use UTF-8 encoding.") from exc
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if suffix in {".html", ".htm"}:
+            parser = _HTMLTextExtractor()
+            parser.feed(text)
+            parser.close()
+            text = parser.text()
+        pages = [(None, text)]
+    else:
+     suffix = source.suffix.lower()
     
     if suffix == ".txt":
         try:
@@ -90,7 +168,7 @@ def load_document(
         except Exception as exc:
             raise DocumentLoadError(f"Cannot extract HTML content: {exc}") from exc
     else:  # PDF
-        try:
+         try:
             with pymupdf.open(stream=content, filetype="pdf") as document:
                 if document.needs_pass:
                     raise DocumentLoadError("Password-protected PDFs are not supported.")
