@@ -36,3 +36,6 @@ outputs/*.json
 
 # Python lint cache
 .ruff_cache/
+
+# Local structured-output reports
+outputs/structured-*.md
