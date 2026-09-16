@@ -229,12 +229,14 @@ healthcompass-load tests/fixtures/messy_guidance.txt --clean
 healthcompass-load tests/fixtures/messy_guidance.txt --clean --remove-boilerplate-line "DRAFT HEADER" --remove-boilerplate-line "DRAFT FOOTER"
 ```
 
-The cleaner normalizes Unicode to NFC, line endings, horizontal whitespace, and
+The cleaner normalizes Unicode to NFKC, line endings, horizontal whitespace, and
 surplus blank lines. It preserves paragraphs, individual lines, list markers,
 case, numbers, units, negations, and page boundaries. It does not reflow lines,
 merge hyphenated words, guess OCR corrections, or infer which repeated lines are
-boilerplate. Whitespace-based table column alignment is not retained; raw text
-remains available for review or a future table-aware parser.
+boilerplate. Standard `Page N of M` footer lines are removed at page boundaries;
+known custom headers and footers can be supplied explicitly. Whitespace-based
+table column alignment is not retained; raw text remains available for review or
+a future table-aware parser.
 
 `--remove-boilerplate-line` removes exact, case-sensitive normalized lines only
 at the beginning or end of each page. It is repeatable and requires `--clean`.
@@ -245,7 +247,7 @@ Cleaned JSON retains `document_id`, source, filename, page number, and metadata.
 `text` contains the cleaned version, with these additional fields:
 
 - `original_text`: unmodified extracted text, before cleaning.
-- `cleaning_version`: policy version, currently `1`.
+- `cleaning_version`: policy version, currently `2`.
 - `removed_boilerplate_lines`: normalized boundary lines actually removed.
 - `warnings`: includes `empty_after_cleaning` if a page has no remaining text.
 

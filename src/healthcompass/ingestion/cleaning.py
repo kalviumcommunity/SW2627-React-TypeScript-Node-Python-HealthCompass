@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 from .loader import DocumentPage
 
-CLEANING_VERSION = "1"
+CLEANING_VERSION = "2"
 _HORIZONTAL_SPACE = re.compile(r"[^\S\n]+")
 _CONTROL_NOISE = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
+_PAGE_FOOTER = re.compile(r"Page\s+\d+\s+of\s+\d+", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -23,8 +24,7 @@ class CleanedPage(DocumentPage):
 
 
 def _normalize(text: str) -> str:
-    # NFC preserves compatibility distinctions such as superscripts and units.
-    text = unicodedata.normalize("NFC", text).lstrip("\ufeff")
+    text = unicodedata.normalize("NFKC", text).lstrip("\ufeff")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u2028", "\n").replace("\u2029", "\n\n").replace("\f", "\n\n")
     # Replace noise with a separator so adjacent words/numbers do not concatenate.
@@ -44,6 +44,7 @@ def _clean(text: str, boilerplate_lines: Iterable[str]) -> tuple[str, tuple[str,
             raise ValueError("Each boilerplate entry must be one nonempty line")
         configured.add(normalized)
     lines = _normalize(text).split("\n")
+    configured.update(line for line in lines if _PAGE_FOOTER.fullmatch(line))
     start, end = 0, len(lines)
     removed_start, removed_end = [], []
     while start < end and (not lines[start] or lines[start] in configured):

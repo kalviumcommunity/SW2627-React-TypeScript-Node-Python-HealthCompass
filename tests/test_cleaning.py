@@ -38,6 +38,11 @@ def test_configured_line_is_not_removed_from_body_or_substrings():
     assert clean_text(text).startswith("HEADER")
 
 
+def test_page_footer_is_removed_only_at_the_boundary():
+    text = "Page 1 of 12\nBody\nPage 1 of 12\nTail\nPage 2 of 12"
+    assert clean_text(text) == "Body\nPage 1 of 12\nTail"
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -56,7 +61,7 @@ def test_cleaning_is_idempotent(text):
 
 def test_unicode_symbols_negation_and_word_boundaries_survive():
     text = "Do not use >5 mg/m²; ≤0.5 µg.\nहिन्दी\nnon-\nclinical\n5\x00mg"
-    assert clean_text(text) == text.replace("\x00", " ")
+    assert clean_text(text) == "Do not use >5 mg/m2; ≤0.5 μg.\nहिन्दी\nnon-\nclinical\n5 mg"
     assert clean_text("a\u2028b\u2029c\fd") == "a\nb\n\nc\n\nd"
 
 
