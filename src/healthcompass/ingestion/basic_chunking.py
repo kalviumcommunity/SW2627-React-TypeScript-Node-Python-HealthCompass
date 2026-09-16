@@ -1,5 +1,6 @@
 """Original single-page baselines retained for compatibility and comparison."""
 
+import tiktoken
 from dataclasses import dataclass
 from typing import List
 
@@ -25,6 +26,29 @@ class ChunkingStats:
     avg_chunk_size: float
     min_chunk_size: int
     max_chunk_size: int
+
+
+@dataclass
+class TokenChunk:
+    """A text chunk with token count and source metadata for RAG retrieval."""
+
+    text: str
+    source: str
+    filename: str
+    chunk_id: int
+    token_count: int
+    metadata: dict[str, str]
+
+
+@dataclass
+class TokenChunkingStats:
+    """Statistics about token-based chunking results."""
+
+    chunk_count: int
+    total_tokens: int
+    avg_token_count: float
+    min_token_count: int
+    max_token_count: int
 
 
 def fixed_size_chunks(
@@ -183,4 +207,103 @@ def calculate_chunk_stats(chunks: List[Chunk]) -> ChunkingStats:
         avg_chunk_size=sum(sizes) / len(sizes),
         min_chunk_size=min(sizes),
         max_chunk_size=max(sizes),
+    )
+
+
+def token_chunks(
+    text: str,
+    source: str,
+    filename: str,
+    size: int = 400,
+    overlap: int = 60,
+    metadata: dict[str, str] | None = None,
+    encoding_name: str = "cl100k_base",
+) -> List[TokenChunk]:
+    """Split text into token-aware chunks with overlap.
+
+    Args:
+        text: The text to chunk
+        source: Source file path
+        filename: Source filename
+        size: Target chunk size in tokens
+        overlap: Overlap between consecutive chunks in tokens
+        metadata: Optional metadata to preserve
+        encoding_name: Tiktoken encoding name (default: cl100k_base)
+
+    Returns:
+        List of TokenChunk objects with token counts
+
+    Token-based sizing ensures chunks respect the model's actual unit of processing.
+    """
+    if type(size) is not int or size < 1:
+        raise ValueError("size must be a positive integer")
+    if type(overlap) is not int or not 0 <= overlap < size:
+        raise ValueError("overlap must satisfy 0 <= overlap < size")
+    if metadata is None:
+        metadata = {}
+
+    if not text.strip():
+        return []
+
+    enc = tiktoken.get_encoding(encoding_name)
+    tokens = enc.encode(text)
+
+    if not tokens:
+        return []
+
+    chunks = []
+    start = 0
+    chunk_id = 0
+    step = size - overlap
+
+    while start < len(tokens):
+        end = min(start + size, len(tokens))
+        chunk_tokens = tokens[start:end]
+        chunk_text = enc.decode(chunk_tokens)
+        token_count = len(chunk_tokens)
+
+        # Only add non-empty chunks
+        if chunk_text.strip():
+            chunks.append(
+                TokenChunk(
+                    text=chunk_text,
+                    source=source,
+                    filename=filename,
+                    chunk_id=chunk_id,
+                    token_count=token_count,
+                    metadata=dict(metadata),
+                )
+            )
+            chunk_id += 1
+
+        # Move start position with overlap
+        if end >= len(tokens):
+            break
+        start = end - overlap
+
+    return chunks
+
+
+def calculate_token_chunk_stats(chunks: List[TokenChunk]) -> TokenChunkingStats:
+    """Calculate statistics about token-based chunking results.
+
+    Args:
+        chunks: List of TokenChunk objects
+
+    Returns:
+        TokenChunkingStats with count and token statistics
+    """
+    if not chunks:
+        return TokenChunkingStats(
+            chunk_count=0, total_tokens=0, avg_token_count=0.0, min_token_count=0, max_token_count=0
+        )
+
+    token_counts = [chunk.token_count for chunk in chunks]
+
+    return TokenChunkingStats(
+        chunk_count=len(chunks),
+        total_tokens=sum(token_counts),
+        avg_token_count=sum(token_counts) / len(token_counts),
+        min_token_count=min(token_counts),
+        max_token_count=max(token_counts),
     )

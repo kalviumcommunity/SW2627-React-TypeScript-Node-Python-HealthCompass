@@ -291,7 +291,63 @@ Each chunk retains source/page identity, metadata, a deterministic ID, and offse
 into its input text. Empty pages yield no chunks. See [chunking design and measured
 comparison](docs/chunking.md) for limits, offset semantics, and the default choice.
 The earlier single-page baseline retains character overlap; the bounded pipeline
-adds no overlap. Token-aware sizing, embeddings, and retrieval remain future work.
+adds no overlap.
+
+## Token-aware chunking — Sprint task 3.23
+
+Token-aware chunking uses tiktoken to size chunks by tokens rather than characters,
+ensuring chunks respect the model's actual unit of processing.
+
+```python
+from healthcompass.ingestion import token_chunks, calculate_token_chunk_stats
+
+chunks = token_chunks(
+    text="Document text here...",
+    source="guideline.pdf",
+    filename="guideline.pdf",
+    size=400,  # tokens
+    overlap=60,  # tokens
+)
+stats = calculate_token_chunk_stats(chunks)
+```
+
+Run the comparison demonstration:
+
+```bash
+python experiments/token_chunking_comparison.py tests/fixtures/vaccination_guidance.txt
+```
+
+This generates a detailed report in `experiments/outputs/token_chunking_comparison.md`
+with boundary-context demonstrations, chunk statistics, and cost trade-offs.
+
+### Configuration
+
+- **Chunk size**: 400 tokens (default)
+- **Overlap**: 60 tokens (default, 15% overlap)
+- **Tokenizer**: cl100k_base (OpenAI's tokenizer)
+
+### Why token-based sizing?
+
+- Tokens are the model's actual unit rather than characters
+- Character-based sizing can produce unpredictable token counts
+- Token-aware sizing ensures consistent context window usage
+- Multiple retrieved chunks can fit into model context alongside prompts
+
+### Overlap benefits
+
+- Preserves ideas that cross chunk boundaries
+- Ensures critical information is not lost at boundaries
+- Trade-off: increases storage and retrieval cost through repeated tokens
+
+### Boundary-context demonstration
+
+The comparison script demonstrates how overlap preserves context:
+- Without overlap: important information crossing boundaries is split between chunks
+- With overlap: boundary context appears in both neighboring chunks
+
+See the generated report for actual examples and chunk statistics.
+
+Embeddings and retrieval remain future work.
 
 ## Testing and team workflow
 
