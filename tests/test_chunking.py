@@ -13,6 +13,7 @@ from healthcompass.ingestion import (
     chunk_page,
     clean_page,
     load_document,
+    tag_chunks,
 )
 from healthcompass.ingestion.cli import main
 
@@ -167,3 +168,52 @@ def test_paragraph_boundaries_support_crlf_without_changing_input():
     chunks = chunk_page(source, max_chars=20)
     assert [chunk.text for chunk in chunks] == ["First one.\r\n\r\n", "Second one."]
     assert "".join(chunk.text for chunk in chunks) == source.text
+
+
+def test_tag_chunks_keeps_source_metadata_next_to_text():
+    tagged = tag_chunks(
+        "refund-policy.pdf",
+        [("Refunds are available within 30 days.", 12), ("Exceptions apply.", 58)],
+        metadata={"section": "Eligibility", "effective_date": "2026-01-01"},
+    )
+
+    assert tagged == [
+        {
+            "text": "Refunds are available within 30 days.",
+            "metadata": {
+                "source": "refund-policy.pdf",
+                "chunk_index": 0,
+                "char_start": 12,
+                "section": "Eligibility",
+                "effective_date": "2026-01-01",
+            },
+        },
+        {
+            "text": "Exceptions apply.",
+            "metadata": {
+                "source": "refund-policy.pdf",
+                "chunk_index": 1,
+                "char_start": 58,
+                "section": "Eligibility",
+                "effective_date": "2026-01-01",
+            },
+        },
+    ]
+
+
+def test_tag_chunks_supports_missing_offsets_and_isolates_metadata():
+    metadata = {"page": 3}
+    tagged = tag_chunks("guide.md", ["First", "Second"], metadata=metadata)
+
+    assert [chunk["metadata"]["char_start"] for chunk in tagged] == [None, None]
+    tagged[0]["metadata"]["page"] = 4
+    assert metadata["page"] == 3
+
+
+@pytest.mark.parametrize(
+    "chunks",
+    [[("text", -1)], [("text", "1")], [("text",)], [3]],
+)
+def test_tag_chunks_rejects_invalid_chunks(chunks):
+    with pytest.raises(ValueError):
+        tag_chunks("guide.md", chunks)
