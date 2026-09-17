@@ -1,6 +1,7 @@
 """Embedding generation for RAG using OpenAI-compatible APIs."""
 
 import os
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List
