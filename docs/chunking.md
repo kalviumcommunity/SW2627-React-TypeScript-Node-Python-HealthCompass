@@ -69,5 +69,25 @@ For bounded chunks with page offsets and content-based IDs, use `chunk_page(page
 or `chunk_document(pages, max_chars=1000)` with a page iterable. The baseline's
 sequential integer IDs must not be treated as globally unique index identifiers.
 Character overlap in that baseline is not token-aware sizing (Task 3.23).
-Its earlier comparison script is retained as `experiments/basic_chunking_comparison.py`;
+Its earlier comparison script is retained at `experiments/basic_chunking_comparison.py`;
 use `experiments/chunking_comparison.py` for the bounded strategies documented above.
+
+## Tagging chunks for citations
+
+Use `tag_chunks` when an index expects a uniform text-plus-metadata record:
+
+```python
+from healthcompass.ingestion import tag_chunks
+
+records = tag_chunks(
+  "refund-policy.pdf",
+  [("Refunds are available within 30 days.", 120)],
+  metadata={"section": "Eligibility", "page": 3, "effective_date": "2026-01-01"},
+)
+```
+
+Every record contains `text` and a metadata dictionary with `source`,
+`chunk_index`, and `char_start`. Additional fields such as section, page, and
+effective date are copied to every chunk. Required fields win if caller metadata
+contains the same keys, and the input metadata is never mutated. Pass bare text
+strings when character positions are unavailable; `char_start` will be `None`.

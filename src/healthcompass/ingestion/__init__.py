@@ -18,6 +18,7 @@ from .loader import (
     ingest_corpus,
     load_document,
 )
+from .metadata import tag_chunks
 
 __all__ = [
     "Chunk",
@@ -38,4 +39,5 @@ __all__ = [
     "clean_text",
     "CorpusIngestionResult",
     "ingest_corpus",
+    "tag_chunks",
 ]
