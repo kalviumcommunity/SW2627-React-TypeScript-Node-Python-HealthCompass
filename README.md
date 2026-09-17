@@ -347,7 +347,109 @@ The comparison script demonstrates how overlap preserves context:
 
 See the generated report for actual examples and chunk statistics.
 
-Embeddings and retrieval remain future work.
+## Embeddings — Sprint task 3.26
+
+Embeddings convert text chunks into numerical vectors for semantic search using OpenAI-compatible APIs.
+
+```python
+from healthcompass.ingestion import (
+    generate_embeddings,
+    prepare_chunks_from_token_chunks,
+    token_chunks,
+)
+
+# Create chunks from text
+chunks = token_chunks(
+    text="Document text here...",
+    source="guideline.pdf",
+    filename="guideline.pdf",
+    size=400,
+    overlap=60,
+)
+
+# Prepare for embedding
+prepared_chunks = prepare_chunks_from_token_chunks(chunks)
+
+# Generate embeddings
+result = generate_embeddings(prepared_chunks, batch_size=100)
+```
+
+Run the embedding generation script:
+
+```bash
+python experiments/embeddings/generate_embeddings.py
+```
+
+### Configuration
+
+Embeddings use environment variables:
+
+- **OPENAI_API_KEY**: Required API key for embeddings service
+- **EMBEDDING_MODEL**: Model name (default: `text-embedding-3-small`)
+- **OPENAI_BASE_URL**: API base URL (default: `https://api.openai.com/v1`)
+
+### Why embeddings?
+
+- Convert text to numerical vectors for semantic similarity search
+- Enable retrieval of relevant document chunks based on meaning, not just keywords
+- Support both document chunks and user queries using the same embedding model
+- Foundation for RAG systems to find contextually relevant information
+
+### Model configuration through environment variables
+
+- API keys are never hardcoded, preventing credential exposure
+- Different environments (dev, staging, production) can use different models/providers
+- Same model must be used for both document chunks and queries for consistency
+- Allows easy switching between embedding models without code changes
+
+### Vector storage with metadata
+
+Each embedded chunk stores:
+- Original text for citation and display
+- Source document and filename for traceability
+- Chunk index for position within document
+- Metadata (section, version, region, etc.)
+- Embedding vector for similarity search
+- Embedding model name for reproducibility
+
+### Vector dimension
+
+- Represents the number of dimensions in the semantic space
+- Different models produce different dimensions (e.g., 1536 for text-embedding-3-small)
+- Higher dimensions can capture more semantic nuance but increase storage/computation cost
+- Dimension is read from actual API response, not assumed
+
+### Batch processing
+
+- Processes multiple chunks in a single API call to reduce overhead
+- Configurable batch size balances API latency and error handling
+- Batching reduces total API calls and cost for large corpora
+- Failed batches can be retried without reprocessing successful batches
+
+### Cost and performance considerations
+
+- Cost scales with number of chunks and API pricing model
+- Latency increases with corpus size and batch size
+- Larger vector dimensions increase storage and computation cost
+- Batching reduces API overhead but increases per-request complexity
+- Consider incremental embedding for large, growing document collections
+
+### Validation
+
+The embedding generation includes comprehensive validation:
+- All chunks receive an embedding
+- Each embedding is a list of numeric values
+- All vectors have the same dimension
+- Number of vectors matches number of chunks
+- Each vector remains attached to its source text and metadata
+
+### Sample output
+
+The script generates:
+- `experiments/outputs/embedded_chunks.json` - Complete embedded chunks with vectors
+- `experiments/outputs/embedding_sample.md` - Human-readable sample report
+
+Retrieval and vector search remain future work.
 
 ## Testing and team workflow
 
