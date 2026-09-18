@@ -35,6 +35,7 @@ from .loader import (
     ingest_corpus,
     load_document,
 )
+from .metadata import tag_chunks
 
 __all__ = [
     "Chunk",
@@ -55,19 +56,5 @@ __all__ = [
     "clean_text",
     "CorpusIngestionResult",
     "ingest_corpus",
-    "EmbeddingError",
-    "EmbeddingManifest",
-    "EmbeddingResult",
-    "EmbeddingRunSummary",
-    "EmbeddedChunk",
-    "call_embedding_api_with_retry",
-    "estimate_cost",
-    "generate_chunk_id",
-    "generate_embeddings",
-    "get_embedding_config",
-    "load_existing_embeddings",
-    "prepare_chunks_from_basic_chunks",
-    "prepare_chunks_from_token_chunks",
-    "save_embeddings_incremental",
-    "validate_embeddings",
+    "tag_chunks",
 ]
