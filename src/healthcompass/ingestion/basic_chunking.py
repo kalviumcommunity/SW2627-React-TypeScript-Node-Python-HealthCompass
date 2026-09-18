@@ -1,8 +1,9 @@
 """Original single-page baselines retained for compatibility and comparison."""
 
-import tiktoken
 from dataclasses import dataclass
 from typing import List
+
+import tiktoken
 
 from .loader import DocumentPage
 
@@ -254,7 +255,6 @@ def token_chunks(
     chunks = []
     start = 0
     chunk_id = 0
-    step = size - overlap
 
     while start < len(tokens):
         end = min(start + size, len(tokens))
