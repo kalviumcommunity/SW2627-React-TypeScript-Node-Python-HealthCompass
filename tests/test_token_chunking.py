@@ -77,6 +77,13 @@ class TestTokenChunking:
         overlap_text = chunks[0].text[-50:]
         assert overlap_text in chunks[1].text
 
+        import tiktoken
+
+        encoding = tiktoken.get_encoding("cl100k_base")
+        first_tokens = encoding.encode(chunks[0].text)
+        second_tokens = encoding.encode(chunks[1].text)
+        assert first_tokens[-15:] == second_tokens[:15]
+
     def test_zero_overlap_works(self):
         """Zero overlap should work correctly."""
         text = "This is a test sentence with multiple words. " * 20
