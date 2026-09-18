@@ -79,7 +79,7 @@ def save_embedded_chunks(result, output_path: Path):
         json.dump(output_data, f, indent=2)
 
 
-def generate_sample_report(result, output_path: Path):
+def generate_sample_report(result, output_path: Path, summary):
     """Generate a human-readable sample report."""
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("# Embedding Generation Sample Report\n\n")
@@ -90,11 +90,26 @@ def generate_sample_report(result, output_path: Path):
         f.write(f"**Created at:** {result.manifest.created_at}\n")
         f.write(f"**Source files:** {', '.join(result.manifest.source_files)}\n\n")
 
+        f.write("## Run Summary\n\n")
+        f.write(f"**Total chunks:** {summary.total_chunks}\n")
+        f.write(f"**Skipped existing embeddings:** {summary.skipped_existing}\n")
+        f.write(f"**Chunks processed:** {summary.chunks_processed}\n")
+        f.write(f"**Successfully embedded:** {summary.successfully_embedded}\n")
+        f.write(f"**Failed chunks:** {summary.failed_chunks}\n")
+        f.write(f"**Total batches:** {summary.total_batches}\n")
+        f.write(f"**Input token count (estimated):** {summary.input_token_count}\n")
+        f.write(f"**Estimated cost:** ${summary.estimated_cost_usd:.6f}\n")
+        f.write(f"**Batch size:** {summary.batch_size}\n")
+        f.write(f"**Retry attempts:** {summary.retry_attempts}\n")
+        if summary.failed_batch_indices:
+            f.write(f"**Failed batch indices:** {summary.failed_batch_indices}\n")
+        f.write("\n")
+
         f.write("## Validation\n\n")
         if result.validation_passed:
-            f.write("✅ **Validation passed**\n\n")
+            f.write("[OK] **Validation passed**\n\n")
         else:
-            f.write("❌ **Validation failed**\n\n")
+            f.write("[FAIL] **Validation failed**\n\n")
             for error in result.validation_errors:
                 f.write(f"- {error}\n")
             f.write("\n")
@@ -124,7 +139,10 @@ def generate_sample_report(result, output_path: Path):
         f.write("- Cost scales with the number of chunks and vector dimension\n")
         f.write("- Latency increases with corpus size and batch size\n")
         f.write("- Batching reduces API overhead but increases per-request complexity\n")
-        f.write("- Larger vector dimensions improve semantic representation but increase storage and computation cost\n\n")
+        f.write("- Larger vector dimensions improve semantic representation but increase storage and computation cost\n")
+        f.write("- Skipping existing embeddings reduces unnecessary API calls and cost\n")
+        f.write("- Retry logic with exponential backoff handles temporary failures\n")
+        f.write("- Progress saving enables resumability for large corpus processing\n\n")
 
 
 def main():
@@ -143,10 +161,32 @@ def main():
     # Generate embeddings
     print("Generating embeddings via API...")
     try:
-        result = generate_embeddings(chunks, batch_size=10)
+        output_path = Path("experiments/outputs/embedded_chunks.json")
+        result, summary = generate_embeddings(
+            chunks, batch_size=10, output_path=output_path, skip_existing=True
+        )
+
         print(f"[OK] Successfully generated {len(result.embedded_chunks)} embeddings")
         print(f"   Model: {result.manifest.embedding_model}")
         print(f"   Vector dimension: {result.manifest.vector_dimension}")
+        print()
+
+        # Print run summary
+        print("=" * 70)
+        print("RUN SUMMARY")
+        print("=" * 70)
+        print(f"Total chunks: {summary.total_chunks}")
+        print(f"Skipped existing embeddings: {summary.skipped_existing}")
+        print(f"Chunks processed: {summary.chunks_processed}")
+        print(f"Successfully embedded: {summary.successfully_embedded}")
+        print(f"Failed chunks: {summary.failed_chunks}")
+        print(f"Total batches: {summary.total_batches}")
+        print(f"Input token count (estimated): {summary.input_token_count}")
+        print(f"Estimated cost: ${summary.estimated_cost_usd:.6f}")
+        print(f"Batch size: {summary.batch_size}")
+        print(f"Retry attempts: {summary.retry_attempts}")
+        if summary.failed_batch_indices:
+            print(f"Failed batch indices: {summary.failed_batch_indices}")
         print()
 
         # Validation results
@@ -174,11 +214,10 @@ def main():
         output_dir.mkdir(parents=True, exist_ok=True)
 
         json_path = output_dir / "embedded_chunks.json"
-        save_embedded_chunks(result, json_path)
         print(f"Saved embedded chunks to: {json_path}")
 
         report_path = output_dir / "embedding_sample.md"
-        generate_sample_report(result, report_path)
+        generate_sample_report(result, report_path, summary)
         print(f"Saved sample report to: {report_path}")
 
     except EmbeddingError as e:

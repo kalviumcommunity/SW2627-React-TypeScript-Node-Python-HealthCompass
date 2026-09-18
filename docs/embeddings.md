@@ -124,6 +124,8 @@ Trade-offs:
    OPENAI_API_KEY=your_api_key_here
    EMBEDDING_MODEL=text-embedding-3-small
    OPENAI_BASE_URL=https://api.openai.com/v1
+   EMBEDDING_BATCH_SIZE=64
+   MAX_RETRY_ATTEMPTS=3
    ```
 
 2. Install dependencies:
@@ -145,6 +147,7 @@ The script will:
 3. Validate the results
 4. Save embedded chunks to `experiments/outputs/embedded_chunks.json`
 5. Generate a human-readable report at `experiments/outputs/embedding_sample.md`
+6. Display a comprehensive run summary
 
 ### Sample output
 
@@ -157,9 +160,28 @@ Creating sample corpus from vaccination guidance...
 Created 3 chunks for embedding
 
 Generating embeddings via API...
+Total chunks: 3
+Skipped existing embeddings: 0
+Chunks to process: 3
+Saved progress after batch 1/1
+
 [OK] Successfully generated 3 embeddings
    Model: text-embedding-3-small
    Vector dimension: 1536
+
+======================================================================
+RUN SUMMARY
+======================================================================
+Total chunks: 3
+Skipped existing embeddings: 0
+Chunks processed: 3
+Successfully embedded: 3
+Failed chunks: 0
+Total batches: 1
+Input token count (estimated): 900
+Estimated cost: $0.000018
+Batch size: 10
+Retry attempts: 0
 
 [OK] Validation passed
 
@@ -174,6 +196,58 @@ Saved embedded chunks to: experiments/outputs/embedded_chunks.json
 Saved sample report to: experiments/outputs/embedding_sample.md
 ```
 
+## Batch Embedding Management
+
+### Batch size configuration
+
+- Configurable via `EMBEDDING_BATCH_SIZE` environment variable (default: 64)
+- Larger batches reduce API overhead but increase memory usage
+- Smaller batches provide better error isolation but increase API calls
+- Choose based on your corpus size and API rate limits
+
+### Skip existing embeddings
+
+- Uses content-based chunk IDs to identify already-embedded chunks
+- Automatically skips chunks that already have embeddings in the output file
+- Reduces unnecessary API calls and costs for re-runs
+- Enables efficient incremental processing of growing corpora
+
+### Retry with exponential backoff
+
+- Automatic retry for temporary API failures (rate limits, timeouts, connection errors)
+- Exponential backoff sequence: 1, 2, 4, 8 seconds between attempts
+- Configurable maximum retry attempts via `MAX_RETRY_ATTEMPTS` (default: 3)
+- Does not retry permanent configuration errors (missing API keys, etc.)
+- Failed batches are recorded in the run summary for troubleshooting
+
+### Progress saving and resumability
+
+- Embeddings are saved incrementally after each successful batch
+- Uses atomic file operations to prevent data corruption
+- If the process stops, it can continue from where it left off
+- Existing embeddings are never deleted during re-runs
+- Enables processing of large corpora without risking complete data loss
+
+### Run summary
+
+The embedding generation provides a comprehensive summary:
+- Total chunks processed
+- Number of skipped existing embeddings
+- Successfully embedded chunks
+- Failed chunks and batch indices
+- Total batches processed
+- Estimated input token count
+- Approximate cost in USD
+- Batch size and retry attempts
+
+### Cost estimation
+
+- Estimates cost based on token count and model pricing
+- Uses approximate pricing: $0.02 per 1M tokens for text-embedding-3-small
+- Clearly labeled as estimated cost (actual cost may vary)
+- Helps budget and plan large corpus processing
+- Token count is estimated from character count (~4 chars per token)
+
 ## Testing
 
 Run the embedding tests with mocked API responses:
@@ -186,11 +260,17 @@ Tests cover:
 - Configuration retrieval and validation
 - Chunk preparation from different formats
 - Successful embedding generation
-- Batch processing
-- Error handling
+- Batch processing with configurable batch size
+- Error handling and retry logic
 - Metadata preservation
 - Validation logic
 - Security (no secrets in logs, metadata isolation)
+- Chunk ID generation for deduplication
+- Loading and skipping existing embeddings
+- Cost estimation
+- Exponential backoff without real API calls
+- Run summary calculations
+- Batch splitting logic
 
 ## Integration with HealthCompass RAG
 
