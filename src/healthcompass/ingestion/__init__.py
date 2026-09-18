@@ -15,11 +15,17 @@ from .embeddings import (
     EmbeddingError,
     EmbeddingManifest,
     EmbeddingResult,
+    EmbeddingRunSummary,
     EmbeddedChunk,
+    call_embedding_api_with_retry,
+    estimate_cost,
+    generate_chunk_id,
     generate_embeddings,
     get_embedding_config,
+    load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
+    save_embeddings_incremental,
     validate_embeddings,
 )
 from .loader import (

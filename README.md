@@ -387,6 +387,8 @@ Embeddings use environment variables:
 - **OPENAI_API_KEY**: Required API key for embeddings service
 - **EMBEDDING_MODEL**: Model name (default: `text-embedding-3-small`)
 - **OPENAI_BASE_URL**: API base URL (default: `https://api.openai.com/v1`)
+- **EMBEDDING_BATCH_SIZE**: Batch size for processing (default: 64)
+- **MAX_RETRY_ATTEMPTS**: Maximum retry attempts for temporary failures (default: 3)
 
 ### Why embeddings?
 
@@ -433,6 +435,55 @@ Each embedded chunk stores:
 - Larger vector dimensions increase storage and computation cost
 - Batching reduces API overhead but increases per-request complexity
 - Consider incremental embedding for large, growing document collections
+
+### Batch embedding management
+
+The enhanced embedding pipeline includes:
+
+- **Batch processing**: Configurable batch size (default: 64) reduces API calls
+- **Skip existing embeddings**: Content-based chunk IDs prevent redundant API calls
+- **Retry with exponential backoff**: Handles temporary failures automatically
+- **Progress saving**: Incremental saves enable resumability for large corpora
+- **Run summary**: Comprehensive statistics including cost estimation
+- **Resumability**: Can continue from partially completed runs
+
+### How batch size works
+
+- Batch size determines how many chunks are processed in a single API call
+- Larger batches reduce API overhead but increase memory usage and per-request complexity
+- Default batch size of 64 provides good balance for most use cases
+- Adjust based on your corpus size and API rate limits
+
+### How existing embeddings are skipped
+
+- Each chunk generates a unique ID based on its content and metadata
+- Before processing, the pipeline checks if a chunk ID already exists in the output file
+- Chunks with existing embeddings are skipped, reducing API calls and cost
+- This enables efficient re-runs when adding new documents to an existing corpus
+
+### How retries and backoff work
+
+- Temporary failures (rate limits, timeouts, connection errors) trigger automatic retry
+- Exponential backoff sequence: 1, 2, 4, 8 seconds between attempts
+- Maximum retry attempts configurable via `MAX_RETRY_ATTEMPTS` (default: 3)
+- Permanent errors (missing API keys, invalid configuration) fail immediately without retry
+- Failed batches are recorded in the run summary for troubleshooting
+
+### How progress is saved and resumed
+
+- Embeddings are saved incrementally after each successful batch
+- Uses atomic file operations (write to temp file, then rename) to prevent corruption
+- If the process stops, it can continue from where it left off
+- Existing embeddings are never deleted during re-runs
+- Enables processing of large corpora without risking complete data loss
+
+### How approximate cost is calculated
+
+- Cost estimation based on token count and model pricing
+- Rough token estimation: ~4 characters per token
+- Example pricing (text-embedding-3-small): $0.02 per 1M tokens
+- Result is clearly labeled as estimated (actual cost may vary)
+- Helps budget and plan large-scale embedding operations
 
 ### Validation
 

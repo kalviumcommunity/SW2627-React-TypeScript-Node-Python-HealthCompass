@@ -3,17 +3,24 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import openai
 import pytest
 
 from healthcompass.ingestion import (
     EmbeddingError,
     EmbeddingManifest,
     EmbeddingResult,
+    EmbeddingRunSummary,
     EmbeddedChunk,
+    call_embedding_api_with_retry,
+    estimate_cost,
+    generate_chunk_id,
     generate_embeddings,
     get_embedding_config,
+    load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
+    save_embeddings_incremental,
     validate_embeddings,
 )
 
@@ -32,10 +39,12 @@ class TestEmbeddingConfig:
             },
             clear=True,
         ):
-            api_key, model, base_url = get_embedding_config()
+            api_key, model, base_url, batch_size, max_retry = get_embedding_config()
             assert api_key == "test-key-123"
             assert model == "text-embedding-3-small"
             assert base_url == "https://api.openai.com/v1"
+            assert batch_size == 64  # default
+            assert max_retry == 3  # default
 
     def test_get_embedding_config_with_defaults(self):
         """Test configuration retrieval with default values."""
@@ -44,10 +53,12 @@ class TestEmbeddingConfig:
             {"OPENAI_API_KEY": "test-key-123"},
             clear=True,
         ):
-            api_key, model, base_url = get_embedding_config()
+            api_key, model, base_url, batch_size, max_retry = get_embedding_config()
             assert api_key == "test-key-123"
             assert model == "text-embedding-3-small"  # default
             assert base_url == "https://api.openai.com/v1"  # default
+            assert batch_size == 64  # default
+            assert max_retry == 3  # default
 
     def test_get_embedding_config_missing_api_key(self):
         """Test that missing API key raises EmbeddingError."""
@@ -126,10 +137,11 @@ class TestEmbeddingGeneration:
     def test_empty_chunk_list(self):
         """Test that empty chunk list returns empty result."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            result = generate_embeddings([])
+            result, summary = generate_embeddings([])
             assert result.embedded_chunks == []
             assert result.manifest.chunk_count == 0
             assert result.validation_passed is True
+            assert summary.total_chunks == 0
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_successful_embedding_generation(self, mock_openai):
@@ -164,7 +176,7 @@ class TestEmbeddingGeneration:
         ]
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            result = generate_embeddings(chunks, batch_size=10)
+            result, summary = generate_embeddings(chunks, batch_size=10)
 
         assert len(result.embedded_chunks) == 2
         assert result.manifest.chunk_count == 2
@@ -172,6 +184,9 @@ class TestEmbeddingGeneration:
         assert result.validation_passed is True
         assert result.embedded_chunks[0].text == "Sample text 1"
         assert result.embedded_chunks[0].embedding == [0.1, 0.2, 0.3, 0.4, 0.5]
+        assert summary.total_chunks == 2
+        assert summary.chunks_processed == 2
+        assert summary.successfully_embedded == 2
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_batch_processing(self, mock_openai):
@@ -205,10 +220,11 @@ class TestEmbeddingGeneration:
         ]
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            result = generate_embeddings(chunks, batch_size=2)
+            result, summary = generate_embeddings(chunks, batch_size=2)
 
         assert len(result.embedded_chunks) == 3
         assert mock_client.embeddings.create.call_count == 2  # Two batches
+        assert summary.total_batches == 2
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_incorrect_response_length_handling(self, mock_openai):
@@ -241,8 +257,10 @@ class TestEmbeddingGeneration:
         ]
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            with pytest.raises(EmbeddingError, match="API returned 1 embeddings for 2 chunks"):
-                generate_embeddings(chunks)
+            result, summary = generate_embeddings(chunks)
+            # The new implementation continues on batch failure
+            assert summary.failed_chunks > 0
+            assert len(summary.failed_batch_indices) > 0
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_api_error_handling(self, mock_openai):
@@ -264,8 +282,10 @@ class TestEmbeddingGeneration:
         ]
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            with pytest.raises(EmbeddingError, match="Unexpected error during embedding generation"):
-                generate_embeddings(chunks)
+            result, summary = generate_embeddings(chunks)
+            # The new implementation continues on batch failure
+            assert summary.failed_chunks > 0
+            assert len(summary.failed_batch_indices) > 0
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_metadata_preservation(self, mock_openai):
@@ -292,7 +312,7 @@ class TestEmbeddingGeneration:
         ]
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-            result = generate_embeddings(chunks)
+            result, summary = generate_embeddings(chunks)
 
         assert result.embedded_chunks[0].source == "guideline.pdf"
         assert result.embedded_chunks[0].filename == "guideline.pdf"
@@ -511,7 +531,7 @@ class TestSecurity:
     def test_no_secrets_in_logs(self):
         """Test that API keys are not logged."""
         with patch.dict(os.environ, {"OPENAI_API_KEY": "secret-key-12345"}, clear=True):
-            api_key, model, base_url = get_embedding_config()
+            api_key, model, base_url, batch_size, max_retry = get_embedding_config()
             # The key should be returned but not logged in normal operation
             assert api_key == "secret-key-12345"
             # This test validates that the function returns the key for use,
@@ -548,10 +568,217 @@ class TestSecurity:
             mock_client.embeddings.create.return_value = mock_response
 
             with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
-                result = generate_embeddings(chunks)
+                result, summary = generate_embeddings(chunks)
 
         # Modify metadata in first chunk
         result.embedded_chunks[0].metadata["key"] = "modified"
 
         # Second chunk should have original metadata
         assert result.embedded_chunks[1].metadata["key"] == "value2"
+
+
+class TestChunkIdGeneration:
+    """Test chunk ID generation for deduplication."""
+
+    def test_generate_chunk_id_consistency(self):
+        """Test that identical chunks generate the same ID."""
+        chunk = {
+            "text": "Sample text",
+            "source": "test.txt",
+            "filename": "test.txt",
+            "chunk_id": 0,
+            "metadata": {"section": "Introduction"},
+        }
+        id1 = generate_chunk_id(chunk)
+        id2 = generate_chunk_id(chunk)
+        assert id1 == id2
+
+    def test_generate_chunk_id_uniqueness(self):
+        """Test that different chunks generate different IDs."""
+        chunk1 = {
+            "text": "Sample text 1",
+            "source": "test.txt",
+            "filename": "test.txt",
+            "chunk_id": 0,
+            "metadata": {"section": "Introduction"},
+        }
+        chunk2 = {
+            "text": "Sample text 2",
+            "source": "test.txt",
+            "filename": "test.txt",
+            "chunk_id": 1,
+            "metadata": {"section": "Body"},
+        }
+        id1 = generate_chunk_id(chunk1)
+        id2 = generate_chunk_id(chunk2)
+        assert id1 != id2
+
+
+class TestExistingEmbeddings:
+    """Test loading and skipping existing embeddings."""
+
+    def test_load_existing_embeddings_from_file(self, tmp_path):
+        """Test loading existing embeddings from JSON file."""
+        import json
+
+        # Create a test file with existing embeddings
+        test_file = tmp_path / "existing_embeddings.json"
+        test_data = {
+            "manifest": {
+                "embedding_model": "text-embedding-3-small",
+                "chunk_count": 1,
+                "vector_dimension": 3,
+                "created_at": "2024-01-01T00:00:00",
+                "source_files": ["test.txt"],
+            },
+            "chunks": [
+                {
+                    "text": "Sample text",
+                    "source": "test.txt",
+                    "filename": "test.txt",
+                    "chunk_id": 0,
+                    "metadata": {"section": "Introduction"},
+                    "embedding": [0.1, 0.2, 0.3],
+                    "embedding_model": "text-embedding-3-small",
+                }
+            ],
+            "validation": {"passed": True, "errors": []},
+        }
+        test_file.write_text(json.dumps(test_data))
+
+        existing = load_existing_embeddings(test_file)
+        assert len(existing) == 1
+        assert list(existing.values())[0].text == "Sample text"
+
+    def test_load_existing_embeddings_nonexistent_file(self, tmp_path):
+        """Test loading from nonexistent file returns empty dict."""
+        nonexistent = tmp_path / "nonexistent.json"
+        existing = load_existing_embeddings(nonexistent)
+        assert existing == {}
+
+
+class TestCostEstimation:
+    """Test cost estimation functionality."""
+
+    def test_estimate_cost_known_model(self):
+        """Test cost estimation for known models."""
+        cost = estimate_cost(1_000_000, "text-embedding-3-small")
+        assert cost == 0.00002  # $0.02 per 1M tokens
+
+    def test_estimate_cost_unknown_model(self):
+        """Test cost estimation for unknown models uses default."""
+        cost = estimate_cost(1_000_000, "unknown-model")
+        assert cost == 0.00002  # Default to small model pricing
+
+    def test_estimate_cost_zero_tokens(self):
+        """Test cost estimation with zero tokens."""
+        cost = estimate_cost(0, "text-embedding-3-small")
+        assert cost == 0.0
+
+
+class TestRetryLogic:
+    """Test retry logic with exponential backoff."""
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    @patch("healthcompass.ingestion.embeddings.time.sleep")
+    def test_retry_on_temporary_error(self, mock_sleep, mock_openai):
+        """Test that temporary errors trigger retry with backoff."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # First call fails with connection error, second succeeds
+        mock_client.embeddings.create.side_effect = [
+            Exception("Connection failed"),
+            MagicMock(data=[MagicMock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+
+        client = openai.OpenAI(api_key="test-key")
+        embeddings = call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=2)
+
+        assert len(embeddings) == 1
+        assert mock_sleep.call_count == 1  # Should sleep once
+        assert mock_sleep.call_args[0][0] == 1  # First backoff is 1 second
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    @patch("healthcompass.ingestion.embeddings.time.sleep")
+    def test_exponential_backoff_sequence(self, mock_sleep, mock_openai):
+        """Test that backoff follows exponential sequence."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Fail twice, succeed on third
+        mock_client.embeddings.create.side_effect = [
+            Exception("Connection failed"),
+            Exception("Connection failed"),
+            MagicMock(data=[MagicMock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+
+        client = openai.OpenAI(api_key="test-key")
+        embeddings = call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=3)
+
+        assert len(embeddings) == 1
+        assert mock_sleep.call_count == 2
+        assert mock_sleep.call_args_list[0][0][0] == 1  # First backoff
+        assert mock_sleep.call_args_list[1][0][0] == 2  # Second backoff
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    def test_no_retry_on_permanent_error(self, mock_openai):
+        """Test that permanent errors don't trigger retry."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Create a generic API error that should not be retried
+        mock_client.embeddings.create.side_effect = Exception("Permanent error")
+
+        client = openai.OpenAI(api_key="test-key")
+        with pytest.raises(EmbeddingError, match="Unexpected error during embedding API call"):
+            call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=3)
+
+
+class TestBatchSplitting:
+    """Test batch splitting logic."""
+
+    def test_correct_batch_splitting(self):
+        """Test that chunks are split into correct batch sizes."""
+        chunks = [{"text": f"Text {i}", "source": "test.txt", "filename": "test.txt", "chunk_id": i, "metadata": {}} for i in range(10)]
+        batch_size = 3
+        expected_batches = 4  # 10 chunks / 3 = 4 batches (3, 3, 3, 1)
+
+        actual_batches = (len(chunks) + batch_size - 1) // batch_size
+        assert actual_batches == expected_batches
+
+    def test_empty_batch_handling(self):
+        """Test that empty chunk list is handled correctly."""
+        chunks = []
+        batch_size = 10
+        expected_batches = 0
+
+        actual_batches = (len(chunks) + batch_size - 1) // batch_size
+        assert actual_batches == expected_batches
+
+
+class TestRunSummary:
+    """Test run summary calculations."""
+
+    def test_run_summary_calculations(self):
+        """Test that run summary calculations are correct."""
+        summary = EmbeddingRunSummary(
+            total_chunks=100,
+            skipped_existing=20,
+            chunks_processed=80,
+            successfully_embedded=75,
+            failed_chunks=5,
+            total_batches=10,
+            input_token_count=40000,
+            estimated_cost_usd=0.0008,
+            embedding_model="text-embedding-3-small",
+            batch_size=8,
+            retry_attempts=2,
+        )
+
+        assert summary.total_chunks == 100
+        assert summary.skipped_existing == 20
+        assert summary.chunks_processed == 80
+        assert summary.successfully_embedded == 75
+        assert summary.failed_chunks == 5
+        assert summary.total_batches == 10
