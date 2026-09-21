@@ -36,6 +36,7 @@ from .loader import (
     load_document,
 )
 from .metadata import tag_chunks
+from .pipeline import IngestionResult, ingest
 
 __all__ = [
     "Chunk",
@@ -57,4 +58,6 @@ __all__ = [
     "CorpusIngestionResult",
     "ingest_corpus",
     "tag_chunks",
+    "IngestionResult",
+    "ingest",
 ]
