@@ -1,427 +1,1730 @@
-# HealthCompass — RAG Foundation
+# 🧭 HealthCompass
 
-HealthCompass is a RAG application for finding and verifying official public health guidance. The current implementation includes workspace setup, chat completion examples with bounded history, parameter experiments, and local multi-format document loading (TXT, PDF, Markdown, HTML) with cleaning and character-based chunking.
+### AI-Powered Public Health Guidance & Outbreak Intelligence Platform
 
-## Project structure
+> **Navigate changing public health guidance with confidence.**
+
+## Problem Statement
+
+A public health agency publishes outbreak guidelines, vaccination protocols, and advisories that update rapidly, but field workers cannot confirm the current correct guidance during fast-moving situations.
+
+This creates a real operational risk: staff may rely on outdated instructions, uncertain regional guidance, or unofficial sources when time-sensitive decisions are needed. HealthCompass addresses this by centralizing approved guidance, tracking document versions, and retrieving the most relevant, up-to-date information with source-grounded answers.
+
+HealthCompass is a full-stack AI-powered platform designed to help **public health and frontline health workers quickly find, understand, and verify current official health guidance** during rapidly changing outbreak situations.
+
+Public health agencies continuously publish and update outbreak guidelines, vaccination protocols, emergency advisories, standard operating procedures, and regional health instructions. These resources are often distributed across PDFs, websites, circulars, and other repositories.
+
+During a fast-moving situation, the real challenge is not simply finding information. It is determining:
+
+- Which guidance is current?
+- Which version is applicable?
+- Does it apply to my region?
+- What changed from the previous version?
+- Where did this recommendation come from?
+
+HealthCompass addresses this problem through:
+
+**Official Documents → Document Intelligence → Version Control → Semantic Search → RAG → Source Verification → Guidance Alerts**
+
+---
+
+# 📌 Table of Contents
+
+- [Overview](#-overview)
+- [Problem](#-problem)
+- [Solution](#-solution)
+- [Key Features](#-key-features)
+- [Product Workflow](#-product-workflow)
+- [How RAG Works](#-how-rag-works)
+- [AI Safety](#-ai-safety)
+- [User Roles](#-user-roles)
+- [System Architecture](#-system-architecture)
+- [Technology Stack](#-technology-stack)
+- [Project Structure](#-project-structure)
+- [Core Modules](#-core-modules)
+- [Data Model](#-data-model)
+- [API Overview](#-api-overview)
+- [Getting Started](#-getting-started)
+- [Environment Variables](#-environment-variables)
+- [Running Locally](#-running-locally)
+- [Docker Setup](#-docker-setup)
+- [Document Ingestion](#-document-ingestion)
+- [AI / RAG Configuration](#-ai--rag-configuration)
+- [Example Workflow](#-example-workflow)
+- [Testing](#-testing)
+- [AI Evaluation](#-ai-evaluation)
+- [Security & Privacy](#-security--privacy)
+- [Project Roadmap](#-project-roadmap)
+- [8-Week Development Plan](#-8-week-development-plan)
+- [Contribution Guidelines](#-contribution-guidelines)
+- [Pull Request Guidelines](#-pull-request-guidelines)
+- [Branching Strategy](#-branching-strategy)
+- [Future Scope](#-future-scope)
+- [Disclaimer](#-disclaimer)
+- [Author](#-author)
+- [License](#-license)
+
+---
+
+# 🔎 Overview
+
+HealthCompass is designed as a **trusted information access layer** between official public health guidance and the workers who need that guidance in the field.
+
+Instead of manually searching through multiple documents, a worker can ask:
+
+> **"What is the current isolation guidance for suspected cases in District A?"**
+
+HealthCompass retrieves the most relevant approved guidance, considers version and regional metadata, and presents a concise answer with the underlying source.
+
+### Core Principle
+
+> **The AI explains the guidance; it does not invent the guidance.**
+
+---
+
+# 🚨 Problem
+
+Public health information changes rapidly.
+
+A single disease or outbreak may have:
+
+- Multiple guideline versions
+- Different regional policies
+- Updated vaccination protocols
+- Emergency advisories
+- Revised operational procedures
+
+Field workers may have access to all of these documents but still have difficulty determining which one is currently applicable.
+
+### Common Problems
+
+- Information is distributed across multiple sources.
+- Old documents remain accessible.
+- Document versions are difficult to compare.
+- Important instructions may be buried in lengthy PDFs.
+- Regional applicability is unclear.
+- Manual searching is slow.
+- Unofficial information may be mixed with official guidance.
+
+### Result
 
 ```text
-SW2627-React-TypeScript-Node-Python-HealthCompass/
-├── .github/               # CI workflow
-├── data/                  # local source documents, ignored by Git
-├── outputs/               # placeholder for generated output
-├── src/
-│   ├── app.py             # chat completion and configuration examples
-│   └── healthcompass/
-│       ├── prompts/       # installed reusable prompt templates
-│       ├── chat/          # bounded conversation history
-│       └── ingestion/     # multi-format loading, cleaning, corpus intake, and JSON CLI
-├── experiments/           # generation parameter comparisons and document intake demos
-├── tests/
-│   ├── fixtures/          # synthetic source documents
-│   └── test_*.py          # ingestion, cleaning, chat, and experiment tests
-├── .env.example           # configuration template
+Fragmented Guidance
+        ↓
+Manual Searching
+        ↓
+Confusion / Delay
+        ↓
+Risk of Using Outdated Guidance
+```
+
+---
+
+# 💡 Solution
+
+HealthCompass centralizes approved public health documents and adds an intelligent layer for retrieval and verification.
+
+```text
+                OFFICIAL GUIDANCE
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Document Upload │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ Version Control │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ Document Parser │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ Vector Indexing │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ Intelligent RAG │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ Source-Cited AI │
+              └────────┬────────┘
+                       ▼
+               FIELD WORKER
+```
+
+---
+
+# ✨ Key Features
+
+## 🔐 Authentication & Role-Based Access
+
+HealthCompass supports authenticated access with role-based permissions.
+
+### Roles
+
+- Field Worker
+- Vaccination Worker
+- Supervisor
+- Public Health Administrator
+- Medical / Public Health Reviewer
+
+### Capabilities
+
+- Registration
+- Login
+- Logout
+- Password reset
+- JWT authentication
+- Role-based authorization
+- User management
+
+---
+
+# 📚 Official Guidance Repository
+
+Administrators can upload and manage official health guidance.
+
+### Supported Document Types
+
+- PDF
+- DOCX
+- HTML
+- TXT
+- CSV
+
+### Document Metadata
+
+Each document can have:
+
+```text
+Document Title
+Issuing Authority
+Version
+Publication Date
+Effective Date
+Expiry Date
+Geographic Scope
+Topic
+Audience
+Status
+Source URL
+Approval Information
+```
+
+### Document Status
+
+```text
+Draft
+Under Review
+Approved
+Active
+Superseded
+Archived
+Expired
+```
+
+---
+
+# 🔄 Version Management
+
+HealthCompass tracks the history of every guideline.
+
+```text
+Version 1.0
+    ↓
+Version 2.0
+    ↓
+Version 2.1
+    ↓
+Version 3.0
+```
+
+When a new active version is published, the previous version can automatically become:
+
+> **Superseded**
+
+This prevents old guidance from being accidentally treated as current.
+
+---
+
+# 📝 Change Detection
+
+HealthCompass compares document versions and highlights meaningful changes.
+
+### Example
+
+```text
+Previous Version
+Vaccination interval: 4 weeks
+
+Current Version
+Vaccination interval: 8 weeks
+
+────────────────────────────
+CHANGE DETECTED
+────────────────────────────
+
+Recommended interval changed
+from 4 weeks to 8 weeks.
+```
+
+The system can identify changes involving:
+
+- Instructions
+- Eligibility
+- Time intervals
+- Thresholds
+- Procedures
+- Regional applicability
+- Effective dates
+
+---
+
+# 🔎 Intelligent Search
+
+Users can search using natural language.
+
+### Traditional Search
+
+```text
+isolation protocol district A
+```
+
+### Natural-Language Search
+
+```text
+What is the current isolation guidance
+for suspected cases in District A?
+```
+
+HealthCompass combines semantic retrieval with metadata filtering.
+
+### Search Ranking
+
+The system prioritizes:
+
+1. Active documents
+2. Applicable geographic region
+3. Latest effective version
+4. Authorized source
+5. Relevant content
+6. Semantic similarity
+
+---
+
+# 🤖 AI Guidance Assistant
+
+The AI assistant allows users to ask questions about approved health guidance.
+
+### Example Questions
+
+```text
+What is the current vaccination protocol?
+
+Has the outbreak guidance changed?
+
+Which protocol applies to District A?
+
+What changed between versions 3.0 and 3.1?
+
+What protective measures are currently required?
+
+What does the latest guideline say about isolation?
+```
+
+---
+
+# 🔗 Source-Grounded Answers
+
+Every AI response should provide enough information for the user to verify the answer.
+
+Example:
+
+```text
+Answer:
+The current applicable guidance is Version 4.2.
+
+Source:
+Public Health Authority
+
+Document:
+Outbreak Response Guideline
+
+Version:
+4.2
+
+Effective Date:
+12 August 2026
+
+Region:
+District A
+
+Section:
+Case Management → Isolation
+```
+
+The user should be able to open the underlying official document.
+
+---
+
+# 📍 Location-Aware Retrieval
+
+Health guidance may differ by jurisdiction.
+
+HealthCompass supports geographic hierarchy:
+
+```text
+Country
+   ↓
+State / Province
+   ↓
+District
+   ↓
+Municipality
+   ↓
+Facility
+```
+
+### Example Retrieval Priority
+
+```text
+Facility Guidance
+       ↓
+District Guidance
+       ↓
+State Guidance
+       ↓
+National Guidance
+       ↓
+General Official Guidance
+```
+
+Only guidance that is approved, active, and applicable should receive priority.
+
+---
+
+# 📢 Guidance Change Alerts
+
+HealthCompass can notify users when important guidance changes.
+
+### Alert Types
+
+- New outbreak guidance
+- Vaccination protocol update
+- Emergency advisory
+- Regional policy update
+- Critical safety update
+- Document superseded
+- Guidance expiry
+
+### Notification Channels
+
+MVP:
+
+- In-app notifications
+- Email
+
+Future:
+
+- Push notifications
+- SMS
+- Slack
+- Microsoft Teams
+
+---
+
+# 📱 Offline / Low-Connectivity Support
+
+Field workers may work in areas with unreliable connectivity.
+
+Planned capabilities include:
+
+- Save important documents
+- Cache commonly used guidance
+- Read saved guidance offline
+- Synchronize when connectivity returns
+
+The interface should clearly distinguish:
+
+```text
+CURRENT
+```
+
+from:
+
+```text
+CACHED — UPDATE AVAILABLE
+```
+
+---
+
+# 🛡️ AI Safety
+
+HealthCompass is not a medical diagnosis system.
+
+The AI should:
+
+- Use approved sources.
+- Cite retrieved content.
+- Show version information.
+- Show effective dates.
+- Consider geographic scope.
+- Distinguish current from historical guidance.
+- Avoid unsupported claims.
+- Avoid fabricated sources.
+- State uncertainty.
+- Refuse unsupported questions.
+- Escalate urgent situations appropriately.
+
+### Safe Fallback
+
+```text
+No current approved guidance was found
+for this question.
+
+Please consult the responsible public
+health authority or applicable emergency protocol.
+```
+
+---
+
+# 👥 User Roles
+
+| Role               | Primary Responsibilities                   |
+| ------------------ | ------------------------------------------ |
+| Field Worker       | Search and access current guidance         |
+| Vaccination Worker | Access vaccination protocols               |
+| Supervisor         | Monitor updates and team information needs |
+| Administrator      | Manage documents and users                 |
+| Medical Reviewer   | Review and approve authoritative content   |
+
+---
+
+# 🏗️ System Architecture
+
+```text
+                           ┌───────────────────────┐
+                           │     React Frontend    │
+                           │ TypeScript + Tailwind │
+                           └───────────┬───────────┘
+                                       │
+                                       ▼
+                           ┌───────────────────────┐
+                           │      Express API      │
+                           │ Auth + Business Logic │
+                           └───────────┬───────────┘
+                                       │
+               ┌───────────────────────┼───────────────────────┐
+               │                       │                       │
+               ▼                       ▼                       ▼
+        ┌─────────────┐         ┌─────────────┐         ┌──────────────┐
+        │   MongoDB   │         │    Redis    │         │ Notification │
+        │  Database   │         │    Cache    │         │   Service    │
+        └─────────────┘         └─────────────┘         └──────────────┘
+                                       │
+                                       ▼
+                           ┌───────────────────────┐
+                           │ Document Processing   │
+                           │    Python Workers     │
+                           └───────────┬───────────┘
+                                       │
+                         ┌─────────────┼─────────────┐
+                         ▼             ▼             ▼
+                  Text Extraction  Metadata      Embeddings
+                         │         Extraction          │
+                         └─────────────┼─────────────┘
+                                       ▼
+                           ┌───────────────────────┐
+                           │ Vector Search / Index │
+                           └───────────┬───────────┘
+                                       │
+                                       ▼
+                           ┌───────────────────────┐
+                           │     FastAPI AI        │
+                           │       RAG Service     │
+                           └───────────┬───────────┘
+                                       │
+                                       ▼
+                           Source-Grounded Answer
+```
+
+---
+
+# 🧰 Technology Stack
+
+## Frontend
+
+- React
+- TypeScript
+- Tailwind CSS
+- Redux Toolkit
+- React Query
+- Recharts
+
+## Backend
+
+- Node.js
+- Express.js
+
+## AI Service
+
+- Python
+- FastAPI
+- RAG pipeline
+- Embedding model
+- LLM
+
+## Database
+
+- MongoDB
+- Redis
+
+## Vector Search
+
+Recommended options:
+
+- Qdrant
+- pgvector
+- Pinecone
+- Weaviate
+
+## Document Processing
+
+- PyMuPDF
+- python-docx
+- BeautifulSoup
+- OCR where required
+
+## Authentication
+
+- JWT
+- bcrypt / Argon2
+
+## DevOps
+
+- Docker
+- Docker Compose
+- GitHub Actions
+- AWS / Render / Railway
+
+---
+
+# 📂 Project Structure
+
+The repository follows a monorepo-oriented structure:
+
+```text
+healthcompass/
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── layouts/
+│   │   ├── hooks/
+│   │   ├── services/
+│   │   ├── store/
+│   │   ├── types/
+│   │   └── utils/
+│   ├── public/
+│   └── package.json
+│
+├── backend/
+│   ├── src/
+│   │   ├── controllers/
+│   │   ├── routes/
+│   │   ├── middleware/
+│   │   ├── models/
+│   │   ├── services/
+│   │   ├── validators/
+│   │   ├── utils/
+│   │   └── app.ts
+│   └── package.json
+│
+├── ai-service/
+│   ├── app/
+│   │   ├── api/
+│   │   ├── rag/
+│   │   ├── ingestion/
+│   │   ├── embeddings/
+│   │   ├── retrieval/
+│   │   ├── prompts/
+│   │   ├── safety/
+│   │   └── main.py
+│   ├── tests/
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── docs/
+│   ├── architecture/
+│   ├── api/
+│   ├── database/
+│   ├── ai/
+│   ├── deployment/
+│   └── product/
+│
+├── scripts/
+│   ├── seed/
+│   └── ingestion/
+│
+├── docker-compose.yml
+├── .env.example
 ├── .gitignore
-├── pyproject.toml         # package, CLI, ingestion dependencies, test settings
-├── requirements.txt       # chat/vector dependencies and local package
+├── LICENSE
 └── README.md
 ```
 
-## Local setup
+---
 
-Requires Python 3.11 or newer. Run commands from this repository's root.
+# 🧩 Core Modules
 
-macOS/Linux:
+## 1. Authentication
+
+Handles:
+
+- Registration
+- Login
+- Password reset
+- JWT
+- Roles
+- Permissions
+
+## 2. User Management
+
+Handles:
+
+- Profiles
+- Regions
+- Organizations
+- Account status
+
+## 3. Guidance Management
+
+Handles:
+
+- Uploads
+- Metadata
+- Approval
+- Publication
+- Archiving
+
+## 4. Version Control
+
+Handles:
+
+- Version creation
+- Current status
+- Superseded versions
+- Version history
+
+## 5. Document Processing
+
+Handles:
+
+- Text extraction
+- Cleaning
+- Chunking
+- Metadata extraction
+- Embedding generation
+
+## 6. Search
+
+Handles:
+
+- Keyword search
+- Semantic search
+- Filtering
+- Ranking
+
+## 7. RAG Assistant
+
+Handles:
+
+- Question understanding
+- Retrieval
+- Ranking
+- LLM generation
+- Citations
+- Safety checks
+
+## 8. Change Detection
+
+Handles:
+
+- Version comparison
+- Change summaries
+- Important change detection
+
+## 9. Notifications
+
+Handles:
+
+- New guidance
+- Critical updates
+- Superseded documents
+- User preferences
+
+## 10. Analytics
+
+Handles:
+
+- Search metrics
+- User activity
+- Frequently requested topics
+- Unanswered questions
+- Guidance usage
+
+---
+
+# 🗃️ Data Model
+
+Core entities include:
+
+```text
+Users
+Documents
+Document Versions
+Document Chunks
+Topics
+Regions
+Queries
+Feedback
+Alerts
+Audit Logs
+```
+
+### Simplified Relationships
+
+```text
+User
+ ├── Queries
+ ├── Feedback
+ └── Audit Logs
+
+Document
+ ├── Versions
+ ├── Topic
+ ├── Region
+ └── Alerts
+
+Document Version
+ └── Document Chunks
+
+Query
+ ├── Retrieved Sources
+ └── Feedback
+```
+
+---
+
+# 🔌 API Overview
+
+Example API groups:
+
+```text
+/api/auth
+/api/users
+/api/documents
+/api/documents/:id
+/api/documents/:id/versions
+/api/search
+/api/guidance/ask
+/api/guidance/sources
+/api/alerts
+/api/feedback
+/api/admin
+```
+
+---
+
+# 🔐 Example Authentication
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "worker@example.com",
+  "password": "password"
+}
+```
+
+Response:
+
+```json
+{
+  "accessToken": "<token>",
+  "user": {
+    "id": "user_123",
+    "role": "FIELD_WORKER"
+  }
+}
+```
+
+---
+
+# 🤖 Example AI Request
+
+```http
+POST /api/guidance/ask
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "question": "What is the current isolation guidance?",
+  "region": "District A"
+}
+```
+
+### Example Response
+
+```json
+{
+  "answer": "The current applicable guidance is Version 4.2...",
+  "confidence": 0.94,
+  "sources": [
+    {
+      "title": "Outbreak Response Guideline",
+      "version": "4.2",
+      "effectiveDate": "2026-08-12",
+      "section": "Case Management > Isolation"
+    }
+  ]
+}
+```
+
+---
+
+# 🧠 How RAG Works
+
+HealthCompass uses Retrieval-Augmented Generation rather than relying purely on the language model's general knowledge.
+
+```text
+                USER QUESTION
+                      │
+                      ▼
+              Query Understanding
+                      │
+                      ▼
+             Region / Topic Detection
+                      │
+                      ▼
+              Semantic Retrieval
+                      │
+                      ▼
+              Candidate Documents
+                      │
+                      ▼
+          Version / Status Filtering
+                      │
+                      ▼
+               Source Ranking
+                      │
+                      ▼
+                 LLM Prompt
+                      │
+                      ▼
+               Generated Answer
+                      │
+                      ▼
+             Citation Validation
+                      │
+                      ▼
+              Safety Validation
+                      │
+                      ▼
+             FINAL RESPONSE
+```
+
+---
+
+# 📄 Document Ingestion Pipeline
+
+When an administrator uploads a document:
+
+```text
+Upload
+  ↓
+File Validation
+  ↓
+Text Extraction
+  ↓
+Cleaning
+  ↓
+Section Detection
+  ↓
+Metadata Extraction
+  ↓
+Chunking
+  ↓
+Embedding Generation
+  ↓
+Vector Indexing
+  ↓
+Ready for Retrieval
+```
+
+Every chunk retains source metadata such as:
+
+```text
+document_id
+version_id
+section
+page
+region
+effective_date
+status
+```
+
+This enables source traceability.
+
+---
+
+# 🔄 Version Lifecycle
+
+```text
+Draft
+  ↓
+Under Review
+  ↓
+Approved
+  ↓
+Active
+  ↓
+Superseded
+  ↓
+Archived
+```
+
+Only documents meeting the configured publication rules should enter the active retrieval index.
+
+---
+
+# 🌎 Example End-to-End Workflow
+
+### Step 1 — New Guidance
+
+An administrator receives a new official PDF.
+
+```text
+Outbreak Guideline v4.2.pdf
+```
+
+### Step 2 — Upload
+
+The administrator uploads the document.
+
+### Step 3 — Metadata
+
+```text
+Authority: Public Health Authority
+Version: 4.2
+Effective Date: 2026-08-12
+Region: District A
+Status: Approved
+```
+
+### Step 4 — Processing
+
+HealthCompass extracts and indexes the content.
+
+### Step 5 — Version Comparison
+
+The system compares Version 4.2 with Version 4.1.
+
+### Step 6 — Change Detection
+
+```text
+Isolation guidance updated.
+Reporting procedure changed.
+Effective date updated.
+```
+
+### Step 7 — Publish
+
+Version 4.2 becomes active.
+
+Version 4.1 becomes superseded.
+
+### Step 8 — Notification
+
+Relevant workers are notified.
+
+### Step 9 — User Question
+
+```text
+What is the current isolation guidance?
+```
+
+### Step 10 — RAG
+
+The system retrieves the relevant section from Version 4.2.
+
+### Step 11 — Answer
+
+The AI provides the current guidance and cites the source.
+
+---
+
+# 🚀 Getting Started
+
+## Prerequisites
+
+Install:
+
+- Git
+- Node.js 20+
+- npm or pnpm
+- Python 3.11+
+- MongoDB
+- Redis
+- Docker
+- Docker Compose
+
+Depending on the selected vector store and LLM provider, additional credentials or services may be required.
+
+---
+
+# 📥 Clone the Repository
 
 ```bash
-python3.11 -m venv .venv
+git clone https://github.com/<your-username>/healthcompass.git
+
+cd healthcompass
+```
+
+---
+
+# ⚙️ Environment Variables
+
+Create a local environment file:
+
+```bash
+cp .env.example .env
+```
+
+Example:
+
+```env
+# Application
+NODE_ENV=development
+PORT=5000
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/healthcompass
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Authentication
+JWT_SECRET=replace-with-a-secure-secret
+
+# AI Service
+AI_SERVICE_URL=http://localhost:8000
+
+# LLM
+LLM_API_KEY=your-api-key
+
+# Vector Database
+VECTOR_DB_URL=your-vector-database-url
+VECTOR_DB_API_KEY=your-vector-database-key
+
+# Storage
+STORAGE_BUCKET=healthcompass-documents
+STORAGE_REGION=your-region
+```
+
+> Never commit secrets, API keys, passwords, or production credentials.
+
+---
+
+# ▶️ Running Locally
+
+## 1. Start MongoDB and Redis
+
+Using Docker:
+
+```bash
+docker compose up -d mongodb redis
+```
+
+---
+
+## 2. Start the Backend
+
+```bash
+cd backend
+
+npm install
+
+npm run dev
+```
+
+The backend should be available at:
+
+```text
+http://localhost:5000
+```
+
+---
+
+## 3. Start the AI Service
+
+```bash
+cd ai-service
+
+python -m venv .venv
+```
+
+### macOS / Linux
+
+```bash
 source .venv/bin/activate
 ```
 
-Windows PowerShell:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Install the application dependencies and test tools:
+### Windows
 
 ```bash
-python -m pip install -r requirements.txt -e ".[dev]"
+.venv\Scripts\activate
 ```
 
-For document loading and its tests only, use `python -m pip install -e ".[dev]"`.
-This smaller installation does not install the dependencies for `src/app.py`
-or the chat/experiment regression tests. Run only the ingestion and cleaning
-tests with it: `python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py tests/test_chunking.py`.
-Dependency ranges are declared in `requirements.txt` and `pyproject.toml`;
-there is currently no lockfile guaranteeing identical resolved versions.
-
-## Secrets and local config
-
-Configuration is required only for the chat examples. Document loading needs no
-API credentials. Keep real secrets in a local `.env` file, never checked in.
-Copy the template with `cp .env.example .env` on macOS/Linux or
-`Copy-Item .env.example .env` in PowerShell, then fill in your provider values:
-
-```env
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=your-real-key
-CHAT_MODEL=your-chat-model
-EMBED_MODEL=your-embedding-model
-```
-
-## Chat completion examples
+Install dependencies:
 
 ```bash
-python src/app.py
+pip install -r requirements.txt
 ```
 
-The default command checks the local configuration without making an API call. To
-try the prompt roles and completion call, use one of these commands:
+Run FastAPI:
 
 ```bash
-python src/app.py --prompt "What is our refund window?"
-python src/app.py --compare
+uvicorn app.main:app --reload --port 8000
 ```
 
-The app sends an explicit system message for role, scope, tone, and fallback
-behavior, followed by the user prompt for the current task.
+---
 
-Chat requests use grounded-answer defaults: `temperature=0.1`, an output cap of
-300 tokens, and `stop=["\\n\\nUser:"]`. Use `--temperature` for a different
-randomness level, `--max-output-tokens` to change the output cap, repeat
-`--stop` to provide custom stop sequences, or use `--top-p` instead of
-temperature when tuning nucleus sampling. For example:
+## 4. Start the Frontend
 
 ```bash
-python src/app.py --prompt "What is our refund window?" --temperature 0 --max-output-tokens 150
+cd frontend
+
+npm install
+
+npm run dev
 ```
 
-## Context window management
+The frontend should be available at:
 
-`ConversationHistory` preserves the system message and removes complete oldest
-user/assistant pairs. It rejects a newest turn that cannot fit, reserves 300 output
-tokens within a default 6,000-unit context budget, and restores prior history when
-a request fails. The estimate counts UTF-8 bytes plus message framing allowances;
-it is deliberately conservative, not exact model tokenization or billing usage.
-Set the budget below your provider's actual context limit. Tool calls and
-multimodal messages are not supported by this text-only history manager.
+```text
+http://localhost:5173
+```
+
+---
+
+# 🐳 Docker Setup
+
+For a complete development environment:
 
 ```bash
-python src/app.py --chat --context-budget 6000 --max-output-tokens 300
+docker compose up --build
 ```
 
-Enter `/exit` or EOF to quit. The output cap defaults to `max_completion_tokens`;
-use `--token-limit-parameter max_tokens` only for providers requiring that field.
-Use `--no-stop` to omit stop sequences for providers that do not support them.
-See [parameter experiments](experiments/README.md) for repeated, measurable
-comparisons of generation settings.
-
-These examples currently use a generic internal-support system prompt, and
-`--compare` uses refund-policy questions. They demonstrate API calls and message
-roles; they do not retrieve uploaded documents or provide grounded HealthCompass
-answers. Both model configuration values are currently required by the startup
-validator, although the examples only call the chat model.
-
-## Document loading — Sprint task 3.19
-
-Requires Python 3.11+. From the repository root, install the project and test tools:
+Stop services:
 
 ```bash
-python -m pip install -e ".[dev]"
-healthcompass-load tests/fixtures/guidance.txt --metadata '{"version":"1","region":"District A"}'
-python -m pytest -q tests/test_ingestion.py tests/test_cleaning.py tests/test_chunking.py
+docker compose down
 ```
 
-The loader runs offline without API keys. It supports UTF-8 TXT (including a BOM),
-Markdown (.md), HTML (.html, .htm), and text-based PDF via PyMuPDF. Output is a JSON
-array with one record per PDF page, or one record for TXT/Markdown/HTML files:
-
-- `document_id`: SHA-256 of the original file bytes; identifies file content,
-  not the logical guideline or its editorial version.
-- `source` and `filename`: resolved local path and original filename.
-- `page_number`: one-based PDF page number; `null` for TXT/Markdown/HTML.
-- `text`: extracted text, without additional cleaning or chunking.
-- `metadata`: caller-supplied string fields such as version, authority, region,
-  status, source URL, and effective date. These are preserved, not verified.
-
-```python
-from healthcompass.ingestion import load_document
-
-pages = load_document("data/guidance.pdf", metadata={"version": "2"})
-```
-
-### Multi-format support
-
-The loader converts different document formats to plain text for the RAG pipeline:
-
-- **PDF**: Uses PyMuPDF to extract text from each page. Handles multi-page documents and preserves page numbers.
-- **TXT**: Reads UTF-8 encoded text files with BOM support.
-- **Markdown (.md)**: Reads UTF-8 encoded Markdown files, preserving formatting for downstream processing.
-- **HTML (.html, .htm)**: Requires UTF-8, extracts text with block boundaries,
-  and excludes head/script/style/template content. Invalid bytes are rejected.
-
-TXT and Markdown line endings are preserved by loading; normalization belongs to
-`--clean`. HTML parsing is text extraction, not an OCR or table reconstruction step.
-
-### Corpus ingestion
-
-For batch processing multiple documents, use the corpus ingestion function:
-
-```python
-from healthcompass.ingestion import ingest_corpus
-
-result = ingest_corpus("data/", metadata={"version": "1"})
-print(f"Loaded: {result.loaded_files} documents, {len(result.loaded)} pages")
-print(f"Skipped: {len(result.skipped)} files")
-```
-
-Or use the demo script:
+Remove containers and volumes:
 
 ```bash
-python experiments/document_intake.py data --corpus
+docker compose down -v
 ```
 
-The corpus ingestion recursively scans directories, loads all supported formats,
-and continues after expected document-load failures. Files are processed in sorted
-path order; skipped entries retain relative paths, so duplicate filenames remain
-traceable. Symlinks are skipped. Unexpected programming errors are not hidden as
-ordinary skipped files. The demo exits nonzero if any file is skipped or nothing
-loads, while still printing the partial result.
+---
 
-### Source identity preservation
+# 📑 Adding a Guidance Document
 
-Every successfully loaded document preserves its source identity:
+The recommended workflow is:
 
-- Original filename is always available for RAG citations
-- Full source path is retained for traceability
-- Document ID (SHA-256 hash) identifies content uniquely
-- Metadata preserves caller-supplied descriptive fields
+```text
+Admin Login
+    ↓
+Documents
+    ↓
+Upload Document
+    ↓
+Enter Metadata
+    ↓
+Submit for Review
+    ↓
+Approve
+    ↓
+Publish
+```
 
-### Error handling
+Example metadata:
 
-The loader uses controlled exception handling:
+```json
+{
+  "title": "Outbreak Response Guideline",
+  "authority": "Public Health Authority",
+  "version": "4.2",
+  "publicationDate": "2026-08-10",
+  "effectiveDate": "2026-08-12",
+  "region": "District A",
+  "status": "ACTIVE"
+}
+```
 
-- Blank PDF pages remain in output to preserve original positions
-- Files with no extractable text, encrypted PDFs, invalid PDFs, missing files,
-  unsupported formats, and invalid UTF-8 produce clear errors
-- Corpus ingestion continues after individual file failures
-- CLI failures write to stderr and exit with status 1
-- Scanned pages require a future OCR step; partially scanned PDFs may contain
-  blank extracted pages and need review
+---
 
-### Limitations
+# 🧠 AI / RAG Configuration
 
-- PDF text extraction may fail or return little/no text for scanned/image-only PDFs
-- OCR is not implemented; scanned PDFs require a future OCR step
-- The loader reads whole files into memory; intended for local intake
-- Future upload endpoints must enforce file-size limits
-- DOCX, CSV, embeddings, indexing, and upload endpoints are future work
+The AI service requires:
 
-## Text cleaning — Sprint task 3.20
+1. A document parser
+2. A chunking strategy
+3. An embedding model
+4. A vector database
+5. An LLM
+6. Retrieval logic
+7. Citation handling
+8. Safety validation
 
-Cleaning is a separate, optional stage after extraction. Original loading output
-is unchanged unless `--clean` is supplied:
+### Recommended retrieval metadata
+
+```text
+document_id
+version_id
+authority
+topic
+region
+audience
+publication_date
+effective_date
+status
+section
+page
+```
+
+This metadata is essential for filtering out outdated and geographically irrelevant sources.
+
+---
+
+# 🔍 Search Strategy
+
+HealthCompass should ideally combine:
+
+### Semantic Search
+
+Find conceptually relevant content.
+
+### Metadata Filtering
+
+Restrict results by:
+
+- Region
+- Topic
+- Status
+- Version
+- Date
+
+### Ranking
+
+Prioritize:
+
+```text
+Applicable + Active + Current + Official + Relevant
+```
+
+This is more reliable than selecting the highest semantic similarity alone.
+
+---
+
+# 🛡️ Safety Strategy
+
+The AI response pipeline should contain multiple safeguards.
+
+```text
+Retrieved Sources
+      ↓
+Source Validation
+      ↓
+Version Check
+      ↓
+Applicability Check
+      ↓
+LLM Generation
+      ↓
+Citation Check
+      ↓
+Unsupported Claim Check
+      ↓
+Final Response
+```
+
+Questions without sufficient authoritative evidence should not receive fabricated answers.
+
+---
+
+# 🧪 Testing
+
+## Backend
 
 ```bash
-healthcompass-load tests/fixtures/messy_guidance.txt --clean
-healthcompass-load tests/fixtures/messy_guidance.txt --clean --remove-boilerplate-line "DRAFT HEADER" --remove-boilerplate-line "DRAFT FOOTER"
+cd backend
+npm test
 ```
 
-The cleaner normalizes Unicode to NFKC, line endings, horizontal whitespace, and
-surplus blank lines. It preserves paragraphs, individual lines, list markers,
-case, numbers, units, negations, and page boundaries. It does not reflow lines,
-merge hyphenated words, guess OCR corrections, or infer which repeated lines are
-boilerplate. Standard `Page N of M` footer lines are removed at page boundaries;
-known custom headers and footers can be supplied explicitly. Whitespace-based
-table column alignment is not retained; raw text remains available for review or
-a future table-aware parser.
-
-`--remove-boilerplate-line` removes exact, case-sensitive normalized lines only
-at the beginning or end of each page. It is repeatable and requires `--clean`.
-An identical line in the document body is preserved. Configure removal only for
-known headers/footers; do not use it to remove substantive guidance.
-
-Cleaned JSON retains `document_id`, source, filename, page number, and metadata.
-`text` contains the cleaned version, with these additional fields:
-
-- `original_text`: unmodified extracted text, before cleaning.
-- `cleaning_version`: policy version, currently `2`.
-- `removed_boilerplate_lines`: normalized boundary lines actually removed.
-- `warnings`: includes `empty_after_cleaning` if a page has no remaining text.
-
-Empty pages are retained for citation traceability. Cleaning never changes source
-file bytes or their content hash. Downstream indexing should handle flagged empty
-pages explicitly. Cleaned character offsets differ from raw extraction offsets;
-page/source identity is preserved, but character-level citation mapping is not
-implemented yet.
-
-```python
-from healthcompass.ingestion import clean_page, load_document
-
-raw_pages = load_document("data/guidance.pdf", metadata={"version": "2"})
-cleaned_pages = [clean_page(page, boilerplate_lines=["KNOWN HEADER"]) for page in raw_pages]
-```
-
-`clean_text()` is also available for standalone strings. Cleaning is idempotent
-under the same policy. Re-cleaning a `CleanedPage` uses its original extraction,
-allowing the removal policy to be changed without losing source text.
-
-## Document chunking — Sprint task 3.21
+## Frontend
 
 ```bash
-healthcompass-load tests/fixtures/chunking_guidance.txt --clean --chunk --max-chars 160
-healthcompass-load tests/fixtures/chunking_guidance.txt --clean --chunk --chunk-strategy fixed --max-chars 160
+cd frontend
+npm test
 ```
 
-`--chunk` emits chunks instead of page records. It defaults to paragraph-aware
-splitting with a 1,000-character limit. `--chunk-strategy` and `--max-chars` require
-`--chunk`; cleaning remains separately opt-in. Without `--chunk`, loading and
-cleaning retain their existing JSON output contracts.
-
-```python
-from healthcompass.ingestion import chunk_document, clean_page, load_document
-
-pages = [clean_page(page) for page in load_document("data/guidance.pdf")]
-chunks = chunk_document(pages, strategy="paragraph", max_chars=1000)
-```
-
-Each chunk retains source/page identity, metadata, a deterministic ID, and offsets
-into its input text. Empty pages yield no chunks. See [chunking design and measured
-comparison](docs/chunking.md) for limits, offset semantics, and the default choice.
-The earlier single-page baseline retains character overlap; the bounded pipeline
-adds no overlap.
-
-## Token-aware chunking — Sprint task 3.23
-
-Token-aware chunking uses tiktoken to size chunks by tokens rather than characters,
-ensuring chunks respect the model's actual unit of processing.
-
-```python
-from healthcompass.ingestion import token_chunks, calculate_token_chunk_stats
-
-chunks = token_chunks(
-    text="Document text here...",
-    source="guideline.pdf",
-    filename="guideline.pdf",
-    size=400,  # tokens
-    overlap=60,  # tokens
-)
-stats = calculate_token_chunk_stats(chunks)
-```
-
-Run the comparison demonstration:
+## AI Service
 
 ```bash
-python experiments/token_chunking_comparison.py tests/fixtures/vaccination_guidance.txt
+cd ai-service
+pytest
 ```
 
-This generates a detailed report in `experiments/outputs/token_chunking_comparison.md`
-with boundary-context demonstrations, chunk statistics, and cost trade-offs.
+---
 
-### Configuration
+# 🔬 Test Coverage Areas
 
-- **Chunk size**: 400 tokens (default)
-- **Overlap**: 60 tokens (default, 15% overlap)
-- **Tokenizer**: cl100k_base (OpenAI's tokenizer)
+## Authentication
 
-### Why token-based sizing?
+- Login
+- Registration
+- Token validation
+- Authorization
 
-- Tokens are the model's actual unit rather than characters
-- Character-based sizing can produce unpredictable token counts
-- Token-aware sizing ensures consistent context window usage
-- Multiple retrieved chunks can fit into model context alongside prompts
+## Documents
 
-### Overlap benefits
+- Upload
+- Validation
+- Metadata
+- Version creation
+- Publication
+- Archive
 
-- Preserves ideas that cross chunk boundaries
-- Ensures critical information is not lost at boundaries
-- Trade-off: increases storage and retrieval cost through repeated tokens
+## Search
 
-### Boundary-context demonstration
+- Keyword search
+- Semantic retrieval
+- Region filtering
+- Current-version filtering
 
-The comparison script demonstrates how overlap preserves context:
-- Without overlap: important information crossing boundaries is split between chunks
-- With overlap: boundary context appears in both neighboring chunks
+## AI
 
-See the generated report for actual examples and chunk statistics.
+- Retrieval
+- Source grounding
+- Citation generation
+- Unsupported questions
+- Outdated source prevention
 
-## Embeddings — Sprint task 3.26
+## Notifications
 
-Embeddings convert text chunks into numerical vectors for semantic search using OpenAI-compatible APIs.
+- Critical updates
+- User targeting
+- Delivery status
 
-```python
-from healthcompass.ingestion import (
-    generate_embeddings,
-    prepare_chunks_from_token_chunks,
-    token_chunks,
-)
+---
 
-# Create chunks from text
-chunks = token_chunks(
-    text="Document text here...",
-    source="guideline.pdf",
-    filename="guideline.pdf",
-    size=400,
-    overlap=60,
-)
+# 📊 AI Evaluation
 
-# Prepare for embedding
-prepared_chunks = prepare_chunks_from_token_chunks(chunks)
+Because HealthCompass is an AI-enabled information retrieval system, model quality should be evaluated separately from normal application tests.
 
-# Generate embeddings
-result = generate_embeddings(prepared_chunks, batch_size=100)
+### Recommended Metrics
+
+| Metric                   | Description                                          |
+| ------------------------ | ---------------------------------------------------- |
+| Retrieval Relevance      | Whether retrieved chunks are actually useful         |
+| Citation Accuracy        | Whether citations support the answer                 |
+| Groundedness             | Whether the answer is supported by retrieved content |
+| Hallucination Rate       | Unsupported information in generated responses       |
+| Current-Version Accuracy | Ability to select current guidance                   |
+| Geographic Accuracy      | Ability to select applicable regional guidance       |
+| Refusal Accuracy         | Ability to decline unsupported questions             |
+
+### Initial Targets
+
+| Metric                  | Target |
+| ----------------------- | -----: |
+| Search Success Rate     |   >90% |
+| Retrieval Relevance     |   >85% |
+| Citation Accuracy       |   >95% |
+| Grounded Answer Rate    |   >95% |
+| Outdated Retrieval Rate |    <5% |
+| User Satisfaction       |   >85% |
+
+These values are evaluation targets for the project and should be validated through testing.
+
+---
+
+# 🔐 Security & Privacy
+
+Security is a core design principle.
+
+### Authentication
+
+- JWT
+- Secure password hashing
+- Token expiration
+- Role-based authorization
+
+### Application Security
+
+- HTTPS
+- Input validation
+- API rate limiting
+- Secure file upload handling
+- Access control
+- Audit logs
+- Secure secrets management
+
+### Data Minimization
+
+The MVP should focus primarily on official public health guidance documents.
+
+Avoid collecting personally identifiable patient information unless a defined use case, governance framework, and appropriate security architecture exist.
+
+---
+
+# 📋 Audit Logging
+
+Important administrative events should be recorded.
+
+Example:
+
+```json
+{
+  "userId": "user_123",
+  "action": "PUBLISH_DOCUMENT",
+  "resourceId": "doc_456",
+  "timestamp": "2026-09-01T10:30:00Z"
+}
 ```
 
-Run the embedding generation script:
+Potential events:
+
+- Login
+- Document upload
+- Document approval
+- Document publication
+- Version creation
+- Document archival
+- User-role changes
+- Alert configuration changes
+
+---
+
+# 📈 Admin Analytics
+
+The administrator dashboard can track:
+
+- Active documents
+- Superseded documents
+- Pending reviews
+- Published updates
+- Active users
+- Search volume
+- AI question volume
+- Frequently searched topics
+- Unanswered questions
+- Reported incorrect responses
+
+Example:
+
+```text
+┌─────────────────┬─────────────────┬─────────────────┐
+│ Active Guides   │ Pending Review  │ Active Users    │
+│      124        │       8         │      487        │
+├─────────────────┼─────────────────┼─────────────────┤
+│ AI Questions    │ Unanswered      │ Reported Issues │
+│     2,481       │       37        │        8        │
+└─────────────────┴─────────────────┴─────────────────┘
+```
+
+---
+
+# 🧭 Project Roadmap
+
+## Phase 1 — MVP
+
+- [ ] Authentication
+- [ ] Role-based access control
+- [ ] User management
+- [ ] Guidance repository
+- [ ] Document upload
+- [ ] Document metadata
+- [ ] Version management
+- [ ] Document processing
+- [ ] Semantic search
+- [ ] RAG assistant
+- [ ] Source citations
+- [ ] Current/superseded detection
+- [ ] Change comparison
+- [ ] Notifications
+- [ ] Admin dashboard
+- [ ] Audit logs
+
+## Phase 2
+
+- [ ] Advanced offline synchronization
+- [ ] Mobile application
+- [ ] Multilingual guidance
+- [ ] Push notifications
+- [ ] Voice search
+
+## Phase 3
+
+- [ ] Automated monitoring of official sources
+- [ ] Public health system integration
+- [ ] Advanced analytics
+- [ ] Cross-agency knowledge federation
+
+## Phase 4
+
+- [ ] Advanced outbreak intelligence
+- [ ] Automated change-impact analysis
+- [ ] Predictive resource planning
+- [ ] AI-assisted policy analysis
+
+---
+
+# 📅 8-Week Development Plan
+
+| Week  | Work                                                |
+| ----- | --------------------------------------------------- |
+| **1** | Requirements, UX, Architecture, Database            |
+| **2** | Authentication, Roles, User Management              |
+| **3** | Guidance Repository, Upload, Metadata, Versioning   |
+| **4** | Document Processing, Embeddings, Semantic Search    |
+| **5** | RAG Pipeline, AI Assistant, Citations               |
+| **6** | Change Detection, Notifications, Dashboard          |
+| **7** | Testing, Security, Optimization, Docker             |
+| **8** | Deployment, Documentation, Evaluation, Presentation |
+
+---
+
+# 🎓 Capstone Scope
+
+HealthCompass is intentionally scoped as an **8-week full-stack AI capstone project**.
+
+The primary technical demonstration should be:
+
+```text
+Official Guidance
+      ↓
+Upload
+      ↓
+Version
+      ↓
+Process
+      ↓
+Index
+      ↓
+Search
+      ↓
+Retrieve
+      ↓
+Generate
+      ↓
+Cite
+      ↓
+Compare
+      ↓
+Alert
+```
+
+The project should prioritize **accuracy, traceability, and usability** over building a large number of unrelated healthcare features.
+
+---
+
+# 🧑‍💻 Development Principles
+
+## 1. Source First
+
+Official guidance should be treated as the authority.
+
+## 2. Current First
+
+Current applicable guidance should be prioritized over historical documents.
+
+## 3. Explainability
+
+AI responses should show where information came from.
+
+## 4. Safety
+
+The system should refuse unsupported health guidance rather than guess.
+
+## 5. Human Oversight
+
+Authoritative content should pass through appropriate approval workflows.
+
+## 6. Minimal Data
+
+Avoid unnecessary personal or patient data.
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome.
+
+### Development Workflow
 
 ```bash
-python experiments/embeddings/generate_embeddings.py
+git checkout -b feature/document-versioning
+
+git add .
+
+git commit -m "feat: add document version management"
+
+git push origin feature/document-versioning
 ```
 
-### Configuration
+Open a Pull Request against `main`.
 
-Embeddings use environment variables:
+---
 
-- **OPENAI_API_KEY**: Required API key for embeddings service
-- **EMBEDDING_MODEL**: Model name (default: `text-embedding-3-small`)
-- **OPENAI_BASE_URL**: API base URL (default: `https://api.openai.com/v1`)
-- **EMBEDDING_BATCH_SIZE**: Batch size for processing (default: 64)
-- **MAX_RETRY_ATTEMPTS**: Maximum retry attempts for temporary failures (default: 3)
+# 📬 Pull Request Guidelines
 
-### Why embeddings?
+A PR should include:
 
-- Convert text to numerical vectors for semantic similarity search
-- Enable retrieval of relevant document chunks based on meaning, not just keywords
-- Support both document chunks and user queries using the same embedding model
-- Foundation for RAG systems to find contextually relevant information
+- Clear summary
+- Related requirement or issue
+- Screenshots for UI changes
+- API examples where applicable
+- Tests
+- Migration notes if required
+- Environment/configuration changes
 
-### Model configuration through environment variables
+### PR Title Examples
 
-- API keys are never hardcoded, preventing credential exposure
-- Different environments (dev, staging, production) can use different models/providers
-- Same model must be used for both document chunks and queries for consistency
-- Allows easy switching between embedding models without code changes
+```text
+feat: add document version management
 
-### Vector storage with metadata
+feat: implement RAG guidance assistant
 
-Each embedded chunk stores:
-- Original text for citation and display
-- Source document and filename for traceability
-- Chunk index for position within document
-- Metadata (section, version, region, etc.)
-- Embedding vector for similarity search
-- Embedding model name for reproducibility
+feat: add source citation support
 
-### Vector dimension
+fix: prevent superseded documents from retrieval
 
-- Represents the number of dimensions in the semantic space
-- Different models produce different dimensions (e.g., 1536 for text-embedding-3-small)
-- Higher dimensions can capture more semantic nuance but increase storage/computation cost
-- Dimension is read from actual API response, not assumed
+fix: handle conflicting guidance versions
 
-### Batch processing
+test: add RAG citation evaluation
 
 - Processes multiple chunks in a single API call to reduce overhead
 - Configurable batch size balances API latency and error handling
@@ -636,19 +1939,161 @@ python -m ruff format --check .
 python -m pytest -q
 python -m compileall -q src experiments
 git diff --check
+docs: update local development setup
 ```
 
-The test suite covers chat history, experiment request/report handling, extraction,
-cleaning, metadata preservation, page positions, Unicode, invalid inputs, protected
-PDFs, and CLI output/errors. All API tests use mocked responses. CI installs the full application dependencies,
-checks lint and formatting, runs tests, compiles `src` and `experiments`, and checks
-chat configuration using placeholder credentials.
+---
 
-PDF fixtures are generated during tests, including multi-page, blank, and
-password-protected documents. CI runs these tests without external API calls.
-Keep real documents in ignored `data/`; commit only synthetic fixtures.
+# 🌿 Branching Strategy
 
-Use branches such as `feature/3.21-document-chunking` and Conventional Commits
-such as `feat(ingestion): add document chunking strategies`. Keep each PR scoped
-to one sprint deliverable and include its task number, behavior, limitations,
-and validation results. Run `python -m pytest -q` before opening a PR.
+A simple branching model is recommended:
+
+```text
+main
+ │
+ ├── feature/authentication
+ ├── feature/document-management
+ ├── feature/version-control
+ ├── feature/rag-assistant
+ ├── feature/change-detection
+ ├── feature/notifications
+ └── fix/*
+```
+
+For larger team development:
+
+```text
+main
+  │
+  └── develop
+       ├── feature/*
+       ├── fix/*
+       ├── docs/*
+       └── test/*
+```
+
+---
+
+# 📚 Documentation
+
+Project documentation should live under:
+
+```text
+/docs
+```
+
+Recommended sections:
+
+```text
+docs/
+├── architecture/
+├── api/
+├── database/
+├── ai/
+├── deployment/
+└── product/
+```
+
+Recommended documents:
+
+```text
+Architecture.md
+API.md
+Database.md
+RAG.md
+AI-Safety.md
+Deployment.md
+```
+
+---
+
+# 🗺️ Future Scope
+
+HealthCompass can eventually evolve into a broader public health intelligence platform.
+
+Potential future capabilities include:
+
+- Automated monitoring of official public health websites
+- Automatic detection of new guideline versions
+- Multilingual guidance
+- Voice-enabled field assistance
+- Mobile application
+- Offline synchronization
+- SMS and messaging integrations
+- Public health system integrations
+- Cross-agency knowledge search
+- Advanced outbreak intelligence
+- Guidance impact analysis
+- Predictive operational planning
+
+These features are intentionally outside the initial MVP.
+
+---
+
+# ⚠️ Medical & AI Disclaimer
+
+HealthCompass is an **information retrieval and decision-support platform**.
+
+It is not:
+
+- A diagnostic system
+- A replacement for healthcare professionals
+- A replacement for public health authorities
+- An autonomous emergency response system
+- A substitute for official clinical or public health protocols
+
+AI-generated responses should be verified against the cited authoritative source, especially in high-risk or rapidly changing situations.
+
+---
+
+# 📌 Project Summary
+
+HealthCompass combines:
+
+```text
+Public Health
+      +
+Document Intelligence
+      +
+Semantic Search
+      +
+RAG
+      +
+Version Control
+      +
+Change Detection
+      +
+Source Verification
+      +
+Notifications
+```
+
+### The core problem
+
+> **Frontline workers need the right public health guidance, but rapidly changing and fragmented documents make it difficult to know what is current and applicable.**
+
+### The core solution
+
+> **HealthCompass centralizes official guidance and uses AI-powered retrieval to help users find, understand, and verify current information quickly.**
+
+### The core promise
+
+> **Navigate changing public health guidance with confidence.**
+
+---
+
+# 📄 License
+
+Select and add the appropriate license before making the repository public.
+
+For an academic/open-source project, the MIT License is one possible option.
+
+```text
+MIT License
+```
+
+---
+
+# ⭐ HealthCompass
+
+> **Find the guidance. Check the version. Understand the change. Verify the source.**
