@@ -13,6 +13,7 @@ from healthcompass.chat.history import (
     SYSTEM_PROMPT,
     ConversationHistory,
 )
+from healthcompass.ingestion import call_embedding_api_with_retry, cosine_similarity
 
 REQUIRED_ENV = {
     "OPENAI_BASE_URL": "OpenAI base URL",
@@ -75,6 +76,20 @@ def compare_prompts(
         print(f"{prompt} -> {ask_model(client, prompt, history)}")
 
 
+def run_embedding_demo(client: OpenAI, model: str) -> None:
+    """Generate sample vectors and compare semantic and unrelated text."""
+    texts = [
+        "How do I reset my account password?",
+        "Steps to recover access to my login",
+        "The cafeteria menu has pasta today",
+    ]
+    embeddings = call_embedding_api_with_retry(client, texts, model)
+    print(f"dimension: {len(embeddings[0])}")
+    print(f"first 8 values: {embeddings[0][:8]}")
+    print(f"password vs login recovery: {cosine_similarity(embeddings[0], embeddings[1]):.4f}")
+    print(f"password vs cafeteria menu: {cosine_similarity(embeddings[0], embeddings[2]):.4f}")
+
+
 def validate_env() -> None:
     load_dotenv()
     missing = []
@@ -102,6 +117,11 @@ def main() -> int:
     )
     modes.add_argument(
         "--chat", action="store_true", help="Interactive multi-turn chat; /exit to quit"
+    )
+    modes.add_argument(
+        "--embedding-demo",
+        action="store_true",
+        help="Generate sample embeddings and compare their similarity",
     )
     parser.add_argument("--context-budget", type=int, default=DEFAULT_CONTEXT_BUDGET)
     parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
@@ -134,7 +154,7 @@ def main() -> int:
             top_p=args.top_p,
             stop=stop,
         )
-        if args.prompt is not None or args.compare or args.chat:
+        if args.prompt is not None or args.compare or args.chat or args.embedding_demo:
             client = create_client()
         else:
             print("Environment is configured for the RAG app.")
@@ -151,6 +171,8 @@ def main() -> int:
                     break
                 if prompt.strip():
                     print(ask_model(client, prompt, history))
+        elif args.embedding_demo:
+            run_embedding_demo(client, os.environ["EMBED_MODEL"])
         elif args.compare:
             compare_prompts(
                 client,

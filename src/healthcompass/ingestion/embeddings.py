@@ -3,11 +3,10 @@
 import json
 import os
 import time
-from hashlib import sha256
-from pathlib import Path
-
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from hashlib import sha256
+from pathlib import Path
 from typing import List
 
 import openai
@@ -73,6 +72,22 @@ class EmbeddingError(Exception):
     """Custom exception for embedding-related errors."""
 
     pass
+
+
+def cosine_similarity(first: List[float], second: List[float]) -> float:
+    """Return cosine similarity for two embedding vectors."""
+    if not first or not second:
+        raise ValueError("Embedding vectors must not be empty")
+    if len(first) != len(second):
+        raise ValueError("Embedding vectors must have the same dimension")
+
+    first_norm = sum(value * value for value in first) ** 0.5
+    second_norm = sum(value * value for value in second) ** 0.5
+    if first_norm == 0 or second_norm == 0:
+        raise ValueError("Embedding vectors must have a non-zero magnitude")
+
+    dot_product = sum(left * right for left, right in zip(first, second, strict=True))
+    return dot_product / (first_norm * second_norm)
 
 
 def get_embedding_config() -> tuple[str, str, str, int, int]:

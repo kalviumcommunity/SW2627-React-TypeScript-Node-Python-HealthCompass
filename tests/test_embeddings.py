@@ -7,12 +7,12 @@ import openai
 import pytest
 
 from healthcompass.ingestion import (
+    EmbeddedChunk,
     EmbeddingError,
     EmbeddingManifest,
-    EmbeddingResult,
     EmbeddingRunSummary,
-    EmbeddedChunk,
     call_embedding_api_with_retry,
+    cosine_similarity,
     estimate_cost,
     generate_chunk_id,
     generate_embeddings,
@@ -20,7 +20,6 @@ from healthcompass.ingestion import (
     load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
-    save_embeddings_incremental,
     validate_embeddings,
 )
 
@@ -65,6 +64,25 @@ class TestEmbeddingConfig:
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(EmbeddingError, match="OPENAI_API_KEY environment variable is not set"):
                 get_embedding_config()
+
+
+class TestCosineSimilarity:
+    """Test semantic similarity calculations for embedding vectors."""
+
+    def test_similar_vectors_score_higher_than_unrelated_vectors(self):
+        similar = cosine_similarity([1.0, 0.0, 0.0], [0.9, 0.1, 0.0])
+        unrelated = cosine_similarity([1.0, 0.0, 0.0], [0.0, 0.0, 1.0])
+
+        assert similar > unrelated
+        assert 0 <= unrelated <= 1
+
+    def test_rejects_mismatched_dimensions(self):
+        with pytest.raises(ValueError, match="same dimension"):
+            cosine_similarity([1.0, 0.0], [1.0])
+
+    def test_rejects_zero_vector(self):
+        with pytest.raises(ValueError, match="non-zero magnitude"):
+            cosine_similarity([0.0, 0.0], [1.0, 0.0])
 
 
 class TestChunkPreparation:
