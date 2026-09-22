@@ -22,6 +22,7 @@ node_modules/
 # Keep the folder structure but ignore actual documents and generated content
 data/*
 !data/.gitkeep
+data/chroma_db/
 
 # Project artifacts
 *.log

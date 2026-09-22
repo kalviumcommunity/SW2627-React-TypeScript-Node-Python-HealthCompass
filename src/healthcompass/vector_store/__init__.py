@@ -1,6 +1,6 @@
-"""HealthCompass application components."""
+"""Vector store for HealthCompass RAG system."""
 
-from .vector_store import (
+from .chroma_store import (
     VectorRecord,
     VectorStoreConfig,
     VectorStoreError,
