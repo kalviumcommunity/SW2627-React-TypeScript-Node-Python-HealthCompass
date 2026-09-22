@@ -485,6 +485,132 @@ The enhanced embedding pipeline includes:
 - Result is clearly labeled as estimated (actual cost may vary)
 - Helps budget and plan large-scale embedding operations
 
+## Vector Database — Sprint task 3.30
+
+HealthCompass uses ChromaDB as a vector database to store document embeddings alongside their source text and metadata for efficient semantic search and retrieval.
+
+```python
+from healthcompass.vector_store import (
+    initialize_vector_store,
+    get_vector_store_config,
+    VectorRecord,
+    insert_record,
+    get_record,
+)
+
+# Get configuration from environment variables
+config = get_vector_store_config()
+
+# Initialize database (creates directory and collection if needed)
+collection = initialize_vector_store(config)
+
+# Insert a record
+record = VectorRecord(
+    id="chunk_001",
+    embedding=[0.1, 0.2, 0.3, ...],  # Your embedding vector
+    text="Vaccination guidance text...",
+    metadata={
+        "source": "guidance.txt",
+        "filename": "guidance.txt",
+        "chunk_id": "0",
+        "section": "Introduction",
+        "page_number": "1",
+        "document_type": "guidance"
+    }
+)
+insert_record(collection, record)
+
+# Retrieve a record
+retrieved = get_record(collection, "chunk_001")
+```
+
+Run the insert and readback test:
+
+```bash
+python experiments/vector_db_readback.py
+```
+
+### Configuration
+
+Vector database uses environment variables:
+
+- **CHROMA_DB_PATH**: Database storage path (default: `data/chroma_db`)
+- **CHROMA_COLLECTION_NAME**: Collection name (default: `healthcompass_documents`)
+- **EMBEDDING_MODEL**: Embedding model (determines vector dimension, default: `text-embedding-3-small`)
+
+### Why use a vector database?
+
+- **Semantic Search**: Find documents similar in meaning, not just keyword matches
+- **Scalability**: Efficiently handle millions of vectors with fast similarity search
+- **Integration**: Seamlessly works with embedding models for RAG applications
+- **Metadata Support**: Store rich metadata alongside vectors for filtering and context
+
+### Vector dimension and model compatibility
+
+The vector dimension of the collection must match the embedding model used:
+
+| Model | Dimension |
+|-------|-----------|
+| text-embedding-3-small | 1536 |
+| text-embedding-3-large | 3072 |
+| text-embedding-ada-002 | 1536 |
+
+The vector store automatically configures the correct dimension based on the `EMBEDDING_MODEL` environment variable.
+
+### Record schema
+
+Each record contains:
+- **id**: Unique identifier for the record
+- **embedding**: The high-dimensional vector representing the text
+- **text**: The original source text for the chunk
+- **metadata**: Rich metadata including source, filename, chunk_id, section, page_number, document_type
+
+### Why store text and metadata with vectors?
+
+- **Citation**: Accurately cite sources when generating answers
+- **Context**: Provide full context when retrieving similar documents
+- **Verification**: Ensure retrieved content matches user queries
+- **Filtering**: Filter results by metadata (e.g., specific documents, sections)
+- **Debugging**: Trace retrieval results back to source documents
+
+### Running tests
+
+Unit tests use temporary databases and deterministic test vectors:
+
+```bash
+pytest tests/test_vector_database.py -v
+```
+
+Integration test for insert and readback:
+
+```bash
+python experiments/vector_db_readback.py
+```
+
+This generates a report in `experiments/outputs/vector_db_readback.md` with actual test results.
+
+### Health check
+
+Verify database connectivity:
+
+```python
+from healthcompass.vector_store import health_check
+
+if health_check():
+    print("Vector database is accessible and healthy")
+```
+
+### Troubleshooting
+
+**Dimension mismatch error**: The existing collection has a different vector dimension than the configured embedding model. Options:
+1. Delete and recreate the collection (WARNING: deletes all data): `rm -rf data/chroma_db`
+2. Use the same embedding model that was used to create the collection
+3. Create a new collection with a different name
+
+**Collection already exists**: The vector store automatically loads existing collections instead of creating new ones to prevent accidental data loss. To start fresh, delete the database directory or use a different collection name.
+
+See [vector database documentation](docs/vector_database.md) for detailed information.
+
 ### Validation
 
 The embedding generation includes comprehensive validation:
