@@ -199,28 +199,40 @@ def save_embeddings_incremental(
         except (json.JSONDecodeError, IOError):
             existing_data = {}
 
-    # Create new data structure
+    # Merge new records with existing records by their content-derived IDs.
+    merged_chunks = {}
+    for chunk_data in existing_data.get("chunks", []):
+        try:
+            chunk_id = generate_chunk_id(chunk_data)
+        except (KeyError, TypeError):
+            continue
+        merged_chunks[chunk_id] = chunk_data
+
     serializable_chunks = []
     for chunk in embedded_chunks:
-        serializable_chunks.append(
-            {
-                "text": chunk.text,
-                "source": chunk.source,
-                "filename": chunk.filename,
-                "chunk_id": chunk.chunk_id,
-                "metadata": chunk.metadata,
-                "embedding": chunk.embedding,
-                "embedding_model": chunk.embedding_model,
-            }
-        )
+        chunk_data = {
+            "text": chunk.text,
+            "source": chunk.source,
+            "filename": chunk.filename,
+            "chunk_id": chunk.chunk_id,
+            "metadata": chunk.metadata,
+            "embedding": chunk.embedding,
+            "embedding_model": chunk.embedding_model,
+        }
+        merged_chunks[generate_chunk_id(chunk_data)] = chunk_data
+    serializable_chunks.extend(merged_chunks.values())
+
+    source_files = set(manifest.source_files)
+    source_files.update(chunk.get("source", "") for chunk in serializable_chunks)
+    source_files.discard("")
 
     output_data = {
         "manifest": {
             "embedding_model": manifest.embedding_model,
-            "chunk_count": manifest.chunk_count,
+            "chunk_count": len(serializable_chunks),
             "vector_dimension": manifest.vector_dimension,
             "created_at": manifest.created_at,
-            "source_files": manifest.source_files,
+            "source_files": sorted(source_files),
         },
         "chunks": serializable_chunks,
         "validation": {
