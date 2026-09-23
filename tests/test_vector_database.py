@@ -3,19 +3,23 @@
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
 from healthcompass.vector_store import (
+    RetrievalResult,
     VectorRecord,
     VectorStoreConfig,
     VectorStoreError,
+    embed_query,
     get_collection_info,
     get_record,
     get_vector_store_config,
     health_check,
     initialize_vector_store,
     insert_record,
+    retrieve,
 )
 
 
@@ -402,3 +406,253 @@ def test_invalid_vector_dimensions_handled(test_config):
 
     with pytest.raises(VectorStoreError, match="Vector dimension mismatch"):
         insert_record(collection, invalid_record)
+
+
+# Retrieval Tests
+
+
+def test_embed_query_uses_configured_model():
+    """Test that query embedding uses the configured embedding model."""
+    with patch("healthcompass.vector_store.chroma_store.openai.OpenAI") as mock_openai:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]
+        mock_client.embeddings.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        with patch.dict(os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}):
+            result = embed_query("test query")
+            assert len(result) == 3
+            mock_client.embeddings.create.assert_called_once()
+            call_args = mock_client.embeddings.create.call_args
+            assert call_args[1]["model"] == "text-embedding-3-small"
+
+
+def test_embed_query_missing_api_key():
+    """Test that missing API key raises clear error."""
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(VectorStoreError, match="OPENAI_API_KEY environment variable is not set"):
+            embed_query("test query")
+
+
+def test_embed_query_custom_model():
+    """Test that custom embedding model can be specified."""
+    with patch("healthcompass.vector_store.chroma_store.openai.OpenAI") as mock_openai:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]
+        mock_client.embeddings.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"}):
+            result = embed_query("test query", embedding_model="text-embedding-3-large")
+            assert len(result) == 3
+            call_args = mock_client.embeddings.create.call_args
+            assert call_args[1]["model"] == "text-embedding-3-large"
+
+
+def test_retrieve_returns_requested_results(test_config):
+    """Test that retrieval returns the requested number of results when enough records exist."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert test records
+    for i in range(5):
+        record = VectorRecord(
+            id=f"chunk_{i}",
+            embedding=[0.1 * (j + 1) for j in range(test_config.embedding_dimension)],
+            text=f"Test document {i}",
+            metadata={"index": str(i)},
+        )
+        insert_record(collection, record)
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query") as mock_embed:
+        mock_embed.return_value = [0.1] * test_config.embedding_dimension
+
+        with patch.object(collection, "query") as mock_query:
+            mock_query.return_value = {
+                "ids": [["chunk_0", "chunk_1", "chunk_2"]],
+                "distances": [[0.1, 0.2, 0.3]],
+                "documents": [["text1", "text2", "text3"]],
+                "metadatas": [[{"k": "v"}, {"k": "v"}, {"k": "v"}]],
+            }
+
+            results = retrieve("test query", collection, k=3)
+            assert len(results) == 3
+            assert all(isinstance(r, RetrievalResult) for r in results)
+
+
+def test_retrieve_includes_ids_scores_text_metadata(test_config):
+    """Test that retrieval includes IDs, scores, text, and metadata."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert a record so collection is not empty
+    record = VectorRecord(
+        id="test",
+        embedding=[0.1] * test_config.embedding_dimension,
+        text="test",
+        metadata={"test": "value"},
+    )
+    insert_record(collection, record)
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query") as mock_embed:
+        mock_embed.return_value = [0.1] * test_config.embedding_dimension
+
+        with patch.object(collection, "query") as mock_query:
+            mock_query.return_value = {
+                "ids": [["chunk_0"]],
+                "distances": [[0.1]],
+                "documents": [["test text"]],
+                "metadatas": [[{"source": "test.txt", "chunk_id": "0"}]],
+            }
+
+            results = retrieve("test query", collection, k=1)
+            assert len(results) == 1
+            assert results[0].chunk_id == "chunk_0"
+            assert results[0].distance == 0.1
+            assert results[0].text == "test text"
+            assert results[0].metadata == {"source": "test.txt", "chunk_id": "0"}
+            assert results[0].rank == 1
+
+
+def test_retrieve_different_k_values(test_config):
+    """Test that different k values return different result counts."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert a record so collection is not empty
+    record = VectorRecord(
+        id="test",
+        embedding=[0.1] * test_config.embedding_dimension,
+        text="test",
+        metadata={"test": "value"},
+    )
+    insert_record(collection, record)
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query") as mock_embed:
+        mock_embed.return_value = [0.1] * test_config.embedding_dimension
+
+        with patch.object(collection, "query") as mock_query:
+            # Mock returns same number of results as requested
+            def mock_query_side_effect(*args, **kwargs):
+                k = kwargs.get("n_results", 1)
+                return {
+                    "ids": [[f"chunk_{i}" for i in range(k)]],
+                    "distances": [[0.1 * (i + 1) for i in range(k)]],
+                    "documents": [[f"text{i}" for i in range(k)]],
+                    "metadatas": [[{"k": "v"} for _ in range(k)]],
+                }
+
+            mock_query.side_effect = mock_query_side_effect
+
+            results_k1 = retrieve("test query", collection, k=1)
+            results_k3 = retrieve("test query", collection, k=3)
+
+            assert len(results_k1) == 1
+            assert len(results_k3) == 3
+
+
+def test_retrieve_empty_collection(test_config):
+    """Test that empty collections are handled safely."""
+    collection = initialize_vector_store(test_config)
+
+    with pytest.raises(VectorStoreError, match="Cannot retrieve from empty collection"):
+        retrieve("test query", collection, k=3)
+
+
+def test_retrieve_invalid_k(test_config):
+    """Test that invalid k values are rejected clearly."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert a record so collection is not empty
+    record = VectorRecord(
+        id="test",
+        embedding=[0.1] * test_config.embedding_dimension,
+        text="test",
+        metadata={"test": "value"},
+    )
+    insert_record(collection, record)
+
+    with pytest.raises(VectorStoreError, match="Invalid k value"):
+        retrieve("test query", collection, k=0)
+
+    with pytest.raises(VectorStoreError, match="Invalid k value"):
+        retrieve("test query", collection, k=-1)
+
+
+def test_retrieval_result_creation():
+    """Test that RetrievalResult dataclass is created correctly."""
+    result = RetrievalResult(
+        rank=1,
+        chunk_id="test_id",
+        distance=0.1,
+        text="test text",
+        metadata={"key": "value"},
+    )
+    assert result.rank == 1
+    assert result.chunk_id == "test_id"
+    assert result.distance == 0.1
+    assert result.text == "test text"
+    assert result.metadata == {"key": "value"}
+
+
+def test_retrieve_handles_insufficient_results(test_config):
+    """Test that retrieval handles cases where collection has fewer records than requested k."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert only 2 records
+    for i in range(2):
+        record = VectorRecord(
+            id=f"chunk_{i}",
+            embedding=[0.1 * (j + 1) for j in range(test_config.embedding_dimension)],
+            text=f"Test document {i}",
+            metadata={"index": str(i)},
+        )
+        insert_record(collection, record)
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query") as mock_embed:
+        mock_embed.return_value = [0.1] * test_config.embedding_dimension
+
+        with patch.object(collection, "query") as mock_query:
+            # Simulate returning only 2 results when k=5
+            mock_query.return_value = {
+                "ids": [["chunk_0", "chunk_1"]],
+                "distances": [[0.1, 0.2]],
+                "documents": [["text1", "text2"]],
+                "metadatas": [[{"k": "v"}, {"k": "v"}]],
+            }
+
+            results = retrieve("test query", collection, k=5)
+            # ChromaDB returns up to k results, but may return fewer if collection is small
+            assert len(results) <= 5
+
+
+def test_retrieve_results_sorted_by_rank(test_config):
+    """Test that retrieval results are sorted by rank."""
+    collection = initialize_vector_store(test_config)
+
+    # Insert a record so collection is not empty
+    record = VectorRecord(
+        id="test",
+        embedding=[0.1] * test_config.embedding_dimension,
+        text="test",
+        metadata={"test": "value"},
+    )
+    insert_record(collection, record)
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query") as mock_embed:
+        mock_embed.return_value = [0.1] * test_config.embedding_dimension
+
+        with patch.object(collection, "query") as mock_query:
+            mock_query.return_value = {
+                "ids": [["chunk_2", "chunk_0", "chunk_1"]],
+                "distances": [[0.3, 0.1, 0.2]],
+                "documents": [["text2", "text0", "text1"]],
+                "metadatas": [[{"k": "v"}, {"k": "v"}, {"k": "v"}]],
+            }
+
+            results = retrieve("test query", collection, k=3)
+            assert results[0].rank == 1
+            assert results[1].rank == 2
+            assert results[2].rank == 3
+            assert results[0].chunk_id == "chunk_2"
+            assert results[1].chunk_id == "chunk_0"
+            assert results[2].chunk_id == "chunk_1"

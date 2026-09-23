@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import chromadb
+import openai
 from chromadb.config import Settings
 from dotenv import load_dotenv
 
@@ -29,6 +30,17 @@ class VectorRecord:
 
     id: str
     embedding: List[float]
+    text: str
+    metadata: Dict[str, Any]
+
+
+@dataclass
+class RetrievalResult:
+    """A result from similarity search retrieval."""
+
+    rank: int
+    chunk_id: str
+    distance: float
     text: str
     metadata: Dict[str, Any]
 
@@ -268,3 +280,98 @@ def get_collection_info(collection: chromadb.Collection) -> Dict[str, Any]:
         }
     except Exception as e:
         raise VectorStoreError(f"Failed to get collection info: {e}")
+
+
+def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
+    """Embed a user query using the same embedding model as document chunks.
+
+    Args:
+        query: The user query text to embed
+        embedding_model: Optional embedding model name, uses environment variable if not provided
+
+    Returns:
+        The embedding vector for the query
+
+    Raises:
+        VectorStoreError: If embedding generation fails
+    """
+    if embedding_model is None:
+        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise VectorStoreError(
+            "OPENAI_API_KEY environment variable is not set. "
+            "Please configure your API key in .env file or environment variables."
+        )
+
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+    try:
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        response = client.embeddings.create(input=[query], model=embedding_model)
+        return response.data[0].embedding
+    except openai.RateLimitError as e:
+        raise VectorStoreError(f"Rate limit error during query embedding: {e}")
+    except openai.APIError as e:
+        raise VectorStoreError(f"API error during query embedding: {e}")
+    except Exception as e:
+        raise VectorStoreError(f"Failed to embed query: {e}")
+
+
+def retrieve(
+    query: str,
+    collection: chromadb.Collection,
+    k: int = 3,
+    embedding_model: str | None = None,
+) -> List[RetrievalResult]:
+    """Perform top-k similarity search for a query against the vector database.
+
+    Args:
+        query: The user query text
+        collection: ChromaDB Collection instance
+        k: Number of results to retrieve (default: 3)
+        embedding_model: Optional embedding model name, uses environment variable if not provided
+
+    Returns:
+        List of RetrievalResult objects ranked by similarity
+
+    Raises:
+        VectorStoreError: If retrieval fails or k is invalid
+    """
+    if k <= 0:
+        raise VectorStoreError(f"Invalid k value: {k}. k must be greater than 0.")
+
+    if collection.count() == 0:
+        raise VectorStoreError("Cannot retrieve from empty collection.")
+
+    try:
+        # Embed the query
+        query_embedding = embed_query(query, embedding_model)
+
+        # Perform similarity search
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=k,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        # Process results
+        retrieval_results = []
+        for i in range(len(results["ids"][0])):
+            retrieval_results.append(
+                RetrievalResult(
+                    rank=i + 1,
+                    chunk_id=results["ids"][0][i],
+                    distance=results["distances"][0][i],
+                    text=results["documents"][0][i],
+                    metadata=results["metadatas"][0][i],
+                )
+            )
+
+        return retrieval_results
+
+    except VectorStoreError:
+        raise
+    except Exception as e:
+        raise VectorStoreError(f"Failed to retrieve results: {e}")
