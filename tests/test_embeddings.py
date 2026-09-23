@@ -1,5 +1,6 @@
 """Tests for embedding generation functionality."""
 
+import json
 import os
 from unittest.mock import MagicMock, patch
 
@@ -20,6 +21,7 @@ from healthcompass.ingestion import (
     load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
+    save_embeddings_incremental,
     validate_embeddings,
 )
 
@@ -634,6 +636,53 @@ class TestChunkIdGeneration:
 
 class TestExistingEmbeddings:
     """Test loading and skipping existing embeddings."""
+
+    def test_incremental_save_preserves_existing_chunks(self, tmp_path):
+        """Test that saving a later batch does not discard earlier vectors."""
+        output_path = tmp_path / "embeddings.json"
+        first_chunk = EmbeddedChunk(
+            text="First chunk",
+            source="first.txt",
+            filename="first.txt",
+            chunk_id=0,
+            metadata={},
+            embedding=[0.1, 0.2],
+            embedding_model="text-embedding-3-small",
+        )
+        second_chunk = EmbeddedChunk(
+            text="Second chunk",
+            source="second.txt",
+            filename="second.txt",
+            chunk_id=1,
+            metadata={},
+            embedding=[0.3, 0.4],
+            embedding_model="text-embedding-3-small",
+        )
+        manifest = EmbeddingManifest(
+            embedding_model="text-embedding-3-small",
+            chunk_count=1,
+            vector_dimension=2,
+            created_at="2024-01-01T00:00:00",
+            source_files=["first.txt"],
+        )
+
+        save_embeddings_incremental([first_chunk], manifest, output_path)
+        save_embeddings_incremental(
+            [second_chunk],
+            EmbeddingManifest(
+                embedding_model=manifest.embedding_model,
+                chunk_count=2,
+                vector_dimension=2,
+                created_at=manifest.created_at,
+                source_files=["second.txt"],
+            ),
+            output_path,
+        )
+
+        existing = load_existing_embeddings(output_path)
+        assert {chunk.text for chunk in existing.values()} == {"First chunk", "Second chunk"}
+        saved_data = json.loads(output_path.read_text())
+        assert saved_data["manifest"]["source_files"] == ["first.txt", "second.txt"]
 
     def test_load_existing_embeddings_from_file(self, tmp_path):
         """Test loading existing embeddings from JSON file."""
