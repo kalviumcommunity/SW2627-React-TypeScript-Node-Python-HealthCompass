@@ -611,6 +611,120 @@ if health_check():
 
 See [vector database documentation](docs/vector_database.md) for detailed information.
 
+## Similarity Search and Top-K Retrieval — Sprint task 3.32
+
+HealthCompass uses semantic similarity search to retrieve the most relevant document chunks for user queries using the vector database.
+
+```python
+from healthcompass.vector_store import retrieve, initialize_vector_store, embed_query
+
+# Initialize database
+collection = initialize_vector_store()
+
+# Retrieve top 3 most similar chunks
+results = retrieve(
+    query="How can a learner reset their password?",
+    collection=collection,
+    k=3
+)
+
+# Display results
+for result in results:
+    print(f"Rank: {result.rank}")
+    print(f"Distance: {result.distance:.4f}")
+    print(f"Text: {result.text}")
+    print(f"Source: {result.metadata.get('source', 'N/A')}")
+```
+
+Run the retrieval demonstration:
+
+```bash
+python experiments/retrieval_demo.py
+```
+
+### Retrieval Process
+
+The retrieval pipeline follows this process:
+
+1. **User Query**: Natural language question from the user
+2. **Query Embedding**: Convert query to vector using the same embedding model as documents
+3. **Vector Search**: Search vector database for semantically similar chunks
+4. **Ranked Results**: Return top-k chunks with distance scores and metadata
+
+### Why Top-K?
+
+Top-k retrieval returns the k most similar document chunks:
+
+- **k=1**: Fast, minimal context, focused answers
+- **k=3**: Balanced approach (default), good context vs noise trade-off
+- **k=5**: More context, comprehensive answers, may include less relevant chunks
+- **k=10**: Extensive context for complex queries
+
+### Distance Score
+
+The system uses **cosine distance** as the similarity metric:
+
+- **Range**: 0.0 to 2.0 for normalized vectors
+- **Lower values** indicate higher similarity (closer in semantic space)
+- **0.0**: Perfect semantic match
+- **~0.3-0.5**: Strong semantic similarity
+- **>1.0**: Low similarity or unrelated content
+
+**Important**: Lower distance = higher similarity (opposite of similarity scores).
+
+### Retrieved Result Schema
+
+Each result includes:
+- **rank**: Position in results (1 = most similar)
+- **chunk_id**: Unique identifier for the chunk
+- **distance**: Cosine distance (lower = more similar)
+- **text**: Original chunk text for context
+- **metadata**: Source information (document, filename, chunk_id, section, page_number, document_type)
+
+### Configuration
+
+Retrieval uses the same environment variables as embeddings:
+
+- **OPENAI_API_KEY**: Required for query embedding
+- **EMBEDDING_MODEL**: Must match the model used for document embeddings
+- **CHROMA_DB_PATH**: Vector database storage path
+- **CHROMA_COLLECTION_NAME**: Collection name for search
+
+### Why Query and Document Embeddings Must Use the Same Model
+
+Embeddings from different models live in different semantic spaces. Using the same model ensures:
+
+- Query and document embeddings are comparable
+- Distance scores accurately reflect semantic similarity
+- Retrieval behavior is predictable and reproducible
+
+If documents use `text-embedding-3-small` (1536 dimensions) but queries use `text-embedding-3-large` (3072 dimensions), the vectors are incompatible and similarity calculations are meaningless.
+
+### Running Tests
+
+Unit tests for retrieval with mocked API calls:
+
+```bash
+pytest tests/test_vector_database.py -k "retrieve or embed" -v
+```
+
+Integration test for retrieval with different k values:
+
+```bash
+python experiments/retrieval_demo.py
+```
+
+This generates a report in `experiments/outputs/retrieval_results.md` with actual test results for k=1, k=3, and k=5.
+
+### Error Handling
+
+- **Missing API key**: Clear error message requiring OPENAI_API_KEY configuration
+- **Empty collection**: Error message requiring document insertion first
+- **Invalid k**: Validation ensures k > 0
+- **Dimension mismatch**: Automatic detection and clear error reporting
+
+See [retrieval documentation](docs/retrieval.md) for detailed information.
+
 ### Validation
 
 The embedding generation includes comprehensive validation:
@@ -625,8 +739,6 @@ The embedding generation includes comprehensive validation:
 The script generates:
 - `experiments/outputs/embedded_chunks.json` - Complete embedded chunks with vectors
 - `experiments/outputs/embedding_sample.md` - Human-readable sample report
-
-Retrieval and vector search remain future work.
 
 ## Testing and team workflow
 
