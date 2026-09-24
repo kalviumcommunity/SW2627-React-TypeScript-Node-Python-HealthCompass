@@ -26,6 +26,7 @@ from .embeddings import (
     load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
+    rank_chunks_by_similarity,
     save_embeddings_incremental,
     validate_embeddings,
 )
@@ -75,6 +76,7 @@ __all__ = [
     "load_existing_embeddings",
     "prepare_chunks_from_basic_chunks",
     "prepare_chunks_from_token_chunks",
+    "rank_chunks_by_similarity",
     "save_embeddings_incremental",
     "validate_embeddings",
 ]

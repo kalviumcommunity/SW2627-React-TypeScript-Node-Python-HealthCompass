@@ -21,6 +21,7 @@ from healthcompass.ingestion import (
     load_existing_embeddings,
     prepare_chunks_from_basic_chunks,
     prepare_chunks_from_token_chunks,
+    rank_chunks_by_similarity,
     save_embeddings_incremental,
     validate_embeddings,
 )
@@ -85,6 +86,42 @@ class TestCosineSimilarity:
     def test_rejects_zero_vector(self):
         with pytest.raises(ValueError, match="non-zero magnitude"):
             cosine_similarity([0.0, 0.0], [1.0, 0.0])
+
+
+class TestSimilarityRanking:
+    """Test ranking chunks by their semantic similarity to a query."""
+
+    def test_ranks_chunks_highest_score_first(self):
+        query = [1.0, 0.0]
+        chunks = [
+            {"text": "cafeteria", "embedding": [0.0, 1.0]},
+            {"text": "password reset", "embedding": [1.0, 0.0]},
+            {"text": "account recovery", "embedding": [0.8, 0.2]},
+        ]
+
+        ranked = rank_chunks_by_similarity(query, chunks)
+
+        assert [item["text"] for item in ranked] == [
+            "password reset",
+            "account recovery",
+            "cafeteria",
+        ]
+        assert ranked[0]["score"] == 1.0
+
+    def test_applies_top_k_without_mutating_input(self):
+        chunks = [
+            {"text": "first", "embedding": [1.0, 0.0]},
+            {"text": "second", "embedding": [0.0, 1.0]},
+        ]
+
+        ranked = rank_chunks_by_similarity([1.0, 0.0], chunks, top_k=1)
+
+        assert len(ranked) == 1
+        assert "score" not in chunks[0]
+
+    def test_rejects_non_positive_top_k(self):
+        with pytest.raises(ValueError, match="top_k must be greater than 0"):
+            rank_chunks_by_similarity([1.0], [], top_k=0)
 
 
 class TestChunkPreparation:
