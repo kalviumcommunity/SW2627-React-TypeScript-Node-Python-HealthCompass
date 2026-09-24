@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import List
+from typing import Any, List, Mapping, Sequence
 
 import openai
 from dotenv import load_dotenv
@@ -88,6 +88,33 @@ def cosine_similarity(first: List[float], second: List[float]) -> float:
 
     dot_product = sum(left * right for left, right in zip(first, second, strict=True))
     return dot_product / (first_norm * second_norm)
+
+
+def rank_chunks_by_similarity(
+    query_embedding: List[float],
+    chunk_records: Sequence[EmbeddedChunk | Mapping[str, Any]],
+    top_k: int | None = None,
+) -> list[dict[str, Any]]:
+    """Rank embedded chunks from most to least similar to a query vector.
+
+    The returned records copy each input record and add a ``score`` field. A
+    copy is used so ranking does not mutate stored embedding data.
+    """
+    if top_k is not None and top_k < 1:
+        raise ValueError("top_k must be greater than 0")
+
+    ranked = []
+    for record in chunk_records:
+        values = record.__dict__ if isinstance(record, EmbeddedChunk) else record
+        ranked.append(
+            {
+                **values,
+                "score": cosine_similarity(query_embedding, values["embedding"]),
+            }
+        )
+
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return ranked if top_k is None else ranked[:top_k]
 
 
 def get_embedding_config() -> tuple[str, str, str, int, int]:
