@@ -1,0 +1,50 @@
+[
+  {
+    "query": "What are the priority groups for vaccination?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "priority",
+    "explanation": "Section 2 specifically discusses priority groups including healthcare workers, elderly, and essential workers"
+  },
+  {
+    "query": "How should vaccines be stored and handled?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "storage",
+    "explanation": "Section 4 covers storage requirements, cold chain protocols, and handling procedures"
+  },
+  {
+    "query": "What are the core vaccination principles?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "principles",
+    "explanation": "Section 1 outlines core principles including checking latest guidelines and verifying approval status"
+  },
+  {
+    "query": "How should dosing and administration be managed?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "dosing",
+    "explanation": "Section 3 addresses standard dosing schedules, booster doses, and protocol deviations"
+  },
+  {
+    "query": "What monitoring and surveillance systems are needed?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "monitoring",
+    "explanation": "Section 5 describes post-vaccination monitoring, adverse event reporting, and surveillance data"
+  },
+  {
+    "query": "Who should be prioritized for vaccination during emergencies?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "priority",
+    "explanation": "Section 2 discusses high-risk populations and priority frameworks for public health emergencies"
+  },
+  {
+    "query": "What are the cold chain requirements for vaccines?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "cold chain",
+    "explanation": "Section 4 mentions cold chain protocols and temperature monitoring for vaccine storage"
+  },
+  {
+    "query": "How should vaccine effectiveness be monitored?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keyword": "effectiveness",
+    "explanation": "Section 5 covers monitoring systems for safety and effectiveness outcomes"
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "config_name": "Config A",
+    "k": 3,
+    "score_threshold": null,
+    "metadata_filter": null,
+    "total_queries": 8,
+    "top_1_hits": 8,
+    "top_k_hits": 8,
+    "top_1_hit_rate": 1.0,
+    "top_k_hit_rate": 1.0,
+    "average_rank": 1.0,
+    "queries_with_zero_relevant": 0
+  },
+  {
+    "config_name": "Config B",
+    "k": 5,
+    "score_threshold": null,
+    "metadata_filter": null,
+    "total_queries": 8,
+    "top_1_hits": 8,
+    "top_k_hits": 8,
+    "top_1_hit_rate": 1.0,
+    "top_k_hit_rate": 1.0,
+    "average_rank": 1.0,
+    "queries_with_zero_relevant": 0
+  }
+]

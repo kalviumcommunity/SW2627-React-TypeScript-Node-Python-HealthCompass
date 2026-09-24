@@ -2028,6 +2028,101 @@ This generates a report in `experiments/outputs/retrieval_results.md` with actua
 
 See [retrieval documentation](docs/retrieval.md) for detailed information.
 
+## Retrieval Tuning Experiment — Sprint task 3.34
+
+HealthCompass includes a retrieval tuning experiment to determine which retrieval settings return the most relevant chunks for user queries.
+
+```python
+from evaluation import run_retrieval_tuning_experiment
+
+# Run the complete tuning experiment
+evaluations, best_config = run_retrieval_tuning_experiment(
+    queries_path=Path("evaluation/retrieval_queries.json"),
+    output_dir=Path("evaluation/results"),
+    use_mock=True,  # Use mock results for testing without API
+)
+
+print(f"Best configuration: {best_config.config_name}")
+print(f"k = {best_config.k}")
+print(f"Top-k hit rate: {best_config.top_k_hit_rate:.1%}")
+```
+
+Run the tuning experiment:
+
+```bash
+python evaluation/tune_retrieval.py
+```
+
+### Experiment Design
+
+The experiment compares multiple retrieval configurations and measures relevance using hit rates:
+
+**Test Queries**: 8 realistic queries based on the vaccination guidance document
+- "What are the priority groups for vaccination?"
+- "How should vaccines be stored and handled?"
+- "What are the core vaccination principles?"
+- And 5 more specific queries
+
+**Configurations Compared**:
+- **Config A**: k=3, no score threshold, no metadata filter
+- **Config B**: k=5, no score threshold, no metadata filter
+
+### Relevance Metrics
+
+**Top-1 Hit Rate**: Percentage of queries where the first retrieved result is from the expected source
+- Measures ranking quality
+- Higher values suggest better precision
+
+**Top-k Hit Rate**: Percentage of queries where at least one retrieved result is from the expected source
+- Measures recall capability
+- Higher values suggest better ability to find relevant information
+
+### Configuration Selection
+
+Selection criteria:
+1. Higher top-k hit rate is better for recall
+2. If top-k hit rates are equal, compare top-1 hit rate
+3. If performance is similar, prefer smaller k (less context, lower cost)
+
+### Results
+
+Based on the experiment with the vaccination guidance document:
+
+| Configuration | k | Top-1 Hit Rate | Top-k Hit Rate |
+|---|---:|---:|---:|
+| Config A | 3 | 100.0% | 100.0% |
+| Config B | 5 | 100.0% | 100.0% |
+
+**Selected Configuration**: Config A (k=3)
+
+**Reason**: Both configurations achieved identical performance, so the smaller k value is preferred for reduced context size and computational cost.
+
+### Output Files
+
+The experiment generates:
+- `evaluation/results/retrieval_tuning_results.json` - Detailed per-query results
+- `evaluation/results/retrieval_tuning_summary.json` - Aggregated metrics
+- `evaluation/results/retrieval_tuning_report.md` - Human-readable report
+
+### Running Tests
+
+Unit tests for the evaluation logic:
+
+```bash
+pytest tests/test_retrieval_tuning.py -v
+```
+
+Tests cover query loading, configuration evaluation, hit rate calculation, source matching, and result aggregation.
+
+### Limitations
+
+- Small evaluation dataset (8 queries, single document)
+- Deterministic embeddings used for testing without API key
+- Not a statistically comprehensive benchmark
+- Results may vary with larger document collections
+
+See [retrieval tuning documentation](docs/retrieval_tuning.md) for detailed information.
+
 ### Validation
 
 The embedding generation includes comprehensive validation:
@@ -2036,12 +2131,6 @@ The embedding generation includes comprehensive validation:
 - All vectors have the same dimension
 - Number of vectors matches number of chunks
 - Each vector remains attached to its source text and metadata
-
-### Sample output
-
-The script generates:
-- `experiments/outputs/embedded_chunks.json` - Complete embedded chunks with vectors
-- `experiments/outputs/embedding_sample.md` - Human-readable sample report
 
 ## Testing and team workflow
 
