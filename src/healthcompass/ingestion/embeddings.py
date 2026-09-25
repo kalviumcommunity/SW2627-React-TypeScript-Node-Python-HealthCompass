@@ -291,23 +291,23 @@ def estimate_cost(token_count: int, model: str) -> float:
         Prices are approximate and should be updated based on current provider pricing.
         These are example prices for OpenAI's text-embedding-3-small model.
     """
-    # Example pricing (update with actual current prices)
+    # Example pricing in USD per 1,000 input tokens.
     pricing = {
-        "text-embedding-3-small": 0.00002,  # $0.02 per 1M tokens
-        "text-embedding-3-large": 0.00013,  # $0.13 per 1M tokens
-        "text-embedding-ada-002": 0.0001,  # $0.10 per 1M tokens
+        "text-embedding-3-small": 0.00002,
+        "text-embedding-3-large": 0.00013,
+        "text-embedding-ada-002": 0.0001,
     }
 
-    price_per_1m_tokens = pricing.get(model, 0.00002)  # Default to small model pricing
-    return (token_count / 1_000_000) * price_per_1m_tokens
+    price_per_1k_tokens = pricing.get(model, 0.00002)
+    return (token_count / 1_000) * price_per_1k_tokens
 
 
-def call_embedding_api_with_retry(
+def _call_embedding_api_with_retry(
     client,
     texts: List[str],
     model: str,
     max_attempts: int = 3,
-) -> List[List[float]]:
+) -> tuple[List[List[float]], int]:
     """Call embedding API with exponential backoff retry logic.
 
     Args:
@@ -317,20 +317,26 @@ def call_embedding_api_with_retry(
         max_attempts: Maximum number of retry attempts
 
     Returns:
-        List of embedding vectors
+        Tuple of embedding vectors and the number of API attempts used.
 
     Raises:
         EmbeddingError: If all retry attempts fail
     """
-    for attempt in range(max_attempts):
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be greater than 0")
+
+    for attempt in range(1, max_attempts + 1):
         try:
             response = client.embeddings.create(input=texts, model=model)
-            return [embedding.embedding for embedding in response.data]
+            return [embedding.embedding for embedding in response.data], attempt
 
         except (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError) as e:
-            if attempt < max_attempts - 1:
-                wait_time = 2**attempt  # Exponential backoff: 1, 2, 4, 8...
-                print(f"Temporary error. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_attempts})...")
+            if attempt < max_attempts:
+                wait_time = 2 ** (attempt - 1)
+                print(
+                    f"Temporary error. Waiting {wait_time}s before retry "
+                    f"(attempt {attempt}/{max_attempts})..."
+                )
                 time.sleep(wait_time)
             else:
                 raise EmbeddingError(f"Temporary error after {max_attempts} attempts: {e}")
@@ -341,14 +347,28 @@ def call_embedding_api_with_retry(
 
         except Exception as e:
             # For testing purposes, treat generic exceptions as retryable
-            if attempt < max_attempts - 1:
-                wait_time = 2**attempt
-                print(f"Temporary error. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_attempts})...")
+            if attempt < max_attempts:
+                wait_time = 2 ** (attempt - 1)
+                print(
+                    f"Temporary error. Waiting {wait_time}s before retry "
+                    f"(attempt {attempt}/{max_attempts})..."
+                )
                 time.sleep(wait_time)
             else:
                 raise EmbeddingError(f"Unexpected error during embedding API call: {e}")
 
     raise EmbeddingError(f"Failed to complete embedding after {max_attempts} attempts")
+
+
+def call_embedding_api_with_retry(
+    client,
+    texts: List[str],
+    model: str,
+    max_attempts: int = 3,
+) -> List[List[float]]:
+    """Call the embedding API with retries and return only the vectors."""
+    embeddings, _ = _call_embedding_api_with_retry(client, texts, model, max_attempts)
+    return embeddings
 
 
 def generate_embeddings(
@@ -407,6 +427,8 @@ def generate_embeddings(
         )
         model = embedding_model or default_model
         actual_batch_size = batch_size or default_batch_size
+        if actual_batch_size < 1:
+            raise ValueError("batch_size must be greater than 0")
 
         client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
@@ -443,10 +465,10 @@ def generate_embeddings(
             texts = [chunk["text"] for chunk in batch]
 
             try:
-                embeddings = call_embedding_api_with_retry(
+                embeddings, attempts = _call_embedding_api_with_retry(
                     client, texts, model, max_retry_attempts
                 )
-                total_retry_attempts += max_retry_attempts  # Simplified tracking
+                total_retry_attempts += attempts - 1
 
                 # Validate response length
                 if len(embeddings) != len(batch):
