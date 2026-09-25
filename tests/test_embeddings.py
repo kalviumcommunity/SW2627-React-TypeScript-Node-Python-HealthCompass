@@ -284,6 +284,61 @@ class TestEmbeddingGeneration:
         assert summary.total_batches == 2
 
     @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    @patch("healthcompass.ingestion.embeddings.time.sleep")
+    def test_summary_counts_actual_retries(self, mock_sleep, mock_openai):
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+        mock_client.embeddings.create.side_effect = [
+            Exception("temporary failure"),
+            MagicMock(data=[MagicMock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+        chunks = [
+            {
+                "text": "Sample text",
+                "source": "test.txt",
+                "filename": "test.txt",
+                "chunk_id": 0,
+                "metadata": {},
+            }
+        ]
+
+        with patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "test-key", "MAX_RETRY_ATTEMPTS": "2"},
+            clear=True,
+        ):
+            _, summary = generate_embeddings(chunks)
+
+        assert summary.retry_attempts == 1
+        mock_sleep.assert_called_once_with(1)
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    def test_rerun_skips_existing_embeddings(self, mock_openai, tmp_path):
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+        mock_client.embeddings.create.return_value = MagicMock(
+            data=[MagicMock(embedding=[0.1, 0.2, 0.3])]
+        )
+        chunks = [
+            {
+                "text": "Sample text",
+                "source": "test.txt",
+                "filename": "test.txt",
+                "chunk_id": 0,
+                "metadata": {},
+            }
+        ]
+        output_path = tmp_path / "embeddings.json"
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            generate_embeddings(chunks, output_path=output_path)
+            _, summary = generate_embeddings(chunks, output_path=output_path)
+
+        assert mock_client.embeddings.create.call_count == 1
+        assert summary.skipped_existing == 1
+        assert summary.successfully_embedded == 0
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
     def test_incorrect_response_length_handling(self, mock_openai):
         """Test handling of incorrect response length from API."""
         mock_client = MagicMock()
@@ -767,12 +822,14 @@ class TestCostEstimation:
     def test_estimate_cost_known_model(self):
         """Test cost estimation for known models."""
         cost = estimate_cost(1_000_000, "text-embedding-3-small")
-        assert cost == 0.00002  # $0.02 per 1M tokens
+        assert cost == 0.02  # $0.02 per 1M tokens
+
+        assert estimate_cost(1_000, "text-embedding-3-small") == 0.00002
 
     def test_estimate_cost_unknown_model(self):
         """Test cost estimation for unknown models uses default."""
         cost = estimate_cost(1_000_000, "unknown-model")
-        assert cost == 0.00002  # Default to small model pricing
+        assert cost == 0.02  # Default to small model pricing
 
     def test_estimate_cost_zero_tokens(self):
         """Test cost estimation with zero tokens."""
