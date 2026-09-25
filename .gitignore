@@ -40,3 +40,7 @@ outputs/*.json
 
 # Local structured-output reports
 outputs/structured-*.md
+
+# Evaluation results (generated, can be regenerated)
+evaluation/results/*.json
+evaluation/results/*.md

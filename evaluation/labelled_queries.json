@@ -1,0 +1,58 @@
+[
+  {
+    "query": "What are the priority groups for vaccination?",
+    "relevant_chunk_ids": ["vaccination_chunk_0"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Section 2: Priority Groups is covered in chunk 0",
+    "expected_topic": "priority groups"
+  },
+  {
+    "query": "How should vaccines be stored and handled?",
+    "relevant_chunk_ids": ["vaccination_chunk_0", "vaccination_chunk_1"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Section 4: Storage and Handling spans both chunks 0 and 1",
+    "expected_topic": "storage and handling"
+  },
+  {
+    "query": "What are the core vaccination principles?",
+    "relevant_chunk_ids": ["vaccination_chunk_0"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Section 1: Core Vaccination Principles is in chunk 0",
+    "expected_topic": "core principles"
+  },
+  {
+    "query": "How should dosing and administration be managed?",
+    "relevant_chunk_ids": ["vaccination_chunk_0"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Section 3: Dosing and Administration is covered in chunk 0",
+    "expected_topic": "dosing and administration"
+  },
+  {
+    "query": "What monitoring and surveillance systems are needed after vaccination?",
+    "relevant_chunk_ids": ["vaccination_chunk_1"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Section 5: Monitoring and Surveillance is in chunk 1",
+    "expected_topic": "monitoring and surveillance"
+  },
+  {
+    "query": "How should adverse events be monitored?",
+    "relevant_chunk_ids": ["vaccination_chunk_0", "vaccination_chunk_1"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Adverse event monitoring is mentioned in both chunk 0 (Section 3) and chunk 1 (Section 5)",
+    "expected_topic": "adverse event monitoring"
+  },
+  {
+    "query": "What are the cold chain protocols for vaccines?",
+    "relevant_chunk_ids": ["vaccination_chunk_1"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Cold chain protocols are mentioned in Section 4 in chunk 1",
+    "expected_topic": "cold chain protocols"
+  },
+  {
+    "query": "How should vaccine inventory be managed?",
+    "relevant_chunk_ids": ["vaccination_chunk_1"],
+    "relevant_source": "vaccination_guidance.txt",
+    "explanation": "Inventory management is mentioned in Section 4 in chunk 1",
+    "expected_topic": "inventory management"
+  }
+]
