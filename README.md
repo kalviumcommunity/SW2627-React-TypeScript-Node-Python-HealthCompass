@@ -2123,6 +2123,107 @@ Tests cover query loading, configuration evaluation, hit rate calculation, sourc
 
 See [retrieval tuning documentation](docs/retrieval_tuning.md) for detailed information.
 
+## Retrieval Evaluation — Sprint task 3.36
+
+HealthCompass includes a systematic retrieval evaluation pipeline that measures Recall@k and Precision@k metrics using a labelled query set with known relevant chunks.
+
+### Purpose
+
+The evaluation measures how well the vector retriever finds relevant document chunks for user queries by:
+
+- Using a manually labelled query set based on actual stored chunks
+- Calculating Recall@k (fraction of relevant chunks found in top-k)
+- Calculating Precision@k (fraction of retrieved chunks that are relevant)
+- Analyzing failures and identifying improvement opportunities
+
+### Running the Evaluation
+
+For production evaluation with actual semantic embeddings (requires OPENAI_API_KEY):
+
+```bash
+python -m evaluation.run_evaluation
+```
+
+For demonstration without an API key (uses deterministic hash-based embeddings):
+
+```bash
+python -m evaluation.run_evaluation_demo
+```
+
+The evaluation:
+
+1. Loads labelled queries from `evaluation/labelled_queries.json`
+2. Retrieves top-k results for each query using the existing retrieval function
+3. Calculates Recall@k and Precision@k for k = 1, 3, 5
+4. Saves detailed results to `evaluation/results/retrieval_evaluation.json`
+5. Generates a human-readable report at `evaluation/results/retrieval_evaluation_report.md`
+
+### Metrics
+
+- **Recall@k**: Fraction of relevant chunks retrieved in top-k results
+- **Precision@k**: Fraction of retrieved chunks that are actually relevant
+
+Example results:
+
+| Metric | Score |
+|---|---:|
+| Recall@1 | 87.5% |
+| Recall@3 | 100.0% |
+| Recall@5 | 100.0% |
+| Precision@1 | 87.5% |
+| Precision@3 | 66.7% |
+| Precision@5 | 40.0% |
+
+### Labelled Query Set
+
+The evaluation uses 8 manually labelled queries based on the actual vaccination guidance document:
+
+- Topics: Priority groups, storage and handling, core principles, dosing and administration, monitoring and surveillance, adverse events, cold chain protocols, inventory management
+- Each query includes relevant chunk IDs, source, explanation, and expected topic
+- Chunk IDs are based on actual stored chunks in the vector database
+
+### Failure Analysis
+
+The evaluation report includes detailed failure analysis for queries with Recall@k < 100%:
+
+- Expected relevant chunks
+- Actually retrieved chunks
+- Observed evidence
+- Likely cause of failure
+- Possible improvements
+
+Common failure patterns include:
+
+- Chunk boundary issues (information split across multiple chunks)
+- Query wording mismatch (different terminology than source)
+- Insufficient k (too few chunks retrieved)
+- Semantic similarity weakness
+
+### Testing
+
+Unit tests for evaluation metrics:
+
+```bash
+pytest tests/test_retrieval_evaluation.py -v
+```
+
+Tests cover:
+
+- Recall@k calculation (perfect, partial, zero recall)
+- Precision@k calculation (perfect, partial, zero precision)
+- Multiple relevant chunks
+- Edge cases (empty results, k larger than available, duplicates)
+- Dataclass validation
+
+### Limitations
+
+- Small evaluation dataset (8 queries, 2 chunks)
+- Based on a single vaccination guidance document
+- Requires live API key for query embedding
+- Results may vary with larger document collections
+
+See [retrieval evaluation documentation](docs/retrieval_evaluation.md) for detailed information.
+
 ### Validation
 
 The embedding generation includes comprehensive validation:
