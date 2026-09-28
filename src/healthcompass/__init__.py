@@ -1,5 +1,14 @@
 """HealthCompass application components."""
 
+from .rag import (
+    AugmentedPromptResult,
+    ContextAssemblyResult,
+    assemble_context,
+    build_augmented_prompt,
+    count_tokens,
+    format_chunk_with_source,
+    get_max_context_tokens,
+)
 from .vector_store import (
     RetrievalResult,
     VectorRecord,
@@ -16,6 +25,13 @@ from .vector_store import (
 )
 
 __all__ = [
+    "AugmentedPromptResult",
+    "ContextAssemblyResult",
+    "assemble_context",
+    "build_augmented_prompt",
+    "count_tokens",
+    "format_chunk_with_source",
+    "get_max_context_tokens",
     "RetrievalResult",
     "VectorRecord",
     "VectorStoreConfig",

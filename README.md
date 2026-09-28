@@ -2224,6 +2224,250 @@ Tests cover:
 
 See [retrieval evaluation documentation](docs/retrieval_evaluation.md) for detailed information.
 
+## Context Injection & Prompt Augmentation — Sprint task 3.38
+
+HealthCompass includes a context injection and prompt augmentation system that prepares retrieved document chunks for LLM generation with proper source tracking and token budget management.
+
+### Purpose
+
+The context injection system bridges retrieval and generation by:
+
+- Formatting retrieved chunks with clear source markers
+- Applying token budget constraints to fit model context windows
+- Building augmented prompts with system instructions, context, and questions
+- Tracking source metadata for citation and auditing
+
+### Running the Demonstration
+
+```bash
+python experiments/context_injection_demo.py
+```
+
+The demonstration:
+
+1. Retrieves chunks for a sample question using the existing retriever
+2. Shows token budget behavior with both small and normal budgets
+3. Displays source marker formatting with actual chunk metadata
+4. Generates an augmented prompt with system instructions
+5. Saves detailed results to `experiments/outputs/context_injection_results.md`
+
+### Core Functions
+
+- `format_chunk_with_source()`: Formats chunks with source markers like `[1] source#chunk_index`
+- `count_tokens()`: Counts tokens using tiktoken (cl100k_base encoding)
+- `assemble_context()`: Assembles context respecting token budget (default: 5000 tokens)
+- `build_augmented_prompt()`: Creates complete augmented prompt with instructions
+- `get_max_context_tokens()`: Gets configured token budget from environment
+
+### Token Budget
+
+The system uses a configurable token budget to:
+
+- Prevent exceeding model context windows
+- Control API costs
+- Improve response times
+- Focus on the most relevant chunks
+
+Default budget: 5000 tokens (configurable via `MAX_CONTEXT_TOKENS` environment variable)
+
+### Source Markers
+
+Each chunk is formatted with a source marker:
+
+```
+[1] vaccination_guidance.txt#0
+```
+
+Where:
+- `[1]` is the retrieval rank
+- `vaccination_guidance.txt` is the source document
+- `#0` is the chunk index
+
+This enables:
+- Citation tracking in generated answers
+- Source verification by users
+- Audit trails for compliance
+- Transparency about information sources
+
+### Augmented Prompt Structure
+
+The final prompt structure:
+
+```
+You are a grounded assistant.
+Answer the question using only the provided context.
+Do not use outside knowledge.
+If the answer cannot be found in the provided context, say:
+'I don't have enough information in the provided context.'
+When possible, cite the source markers such as [1] or [2].
+
+Context:
+[1] source#chunk_index
+...
+
+Question:
+<user question>
+```
+
+### Testing
+
+Unit tests cover:
+
+- Source marker formatting correctness
+- Token budget enforcement
+- Chunk exclusion when budget exceeded
+- Token calculation accuracy
+- Source metadata tracking
+- Empty retrieval handling
+- Large chunk handling
+- Retrieval order preservation
+- Augmented prompt structure
+
+```bash
+pytest tests/test_context_injection.py
+```
+
+### Example Results
+
+Sample demonstration output:
+
+- **Question**: "What are the priority groups for vaccination?"
+- **Retrieved chunks**: 2
+- **Token budget (small)**: 300 tokens → 1 chunk included, 1 excluded
+- **Token budget (normal)**: 5000 tokens → 2 chunks included, 0 excluded
+- **Context tokens**: 627 / 5000
+- **Source markers**: `[1] vaccination_guidance.txt#0`, `[2] vaccination_guidance.txt#1`
+
+### Limitations
+
+- Deterministic embeddings used for demonstration when no API key available
+- Small document collection (2 chunks) limits demonstration scope
+- Token budget is fixed per request (not adaptive)
+
+See [context injection documentation](docs/context-injection.md) for detailed information.
+
+### Validation
+
+HealthCompass includes a context injection and prompt augmentation system that prepares retrieved document chunks for LLM generation with proper source tracking and token budget management.
+
+### Purpose
+
+The context injection system bridges retrieval and generation by:
+
+- Formatting retrieved chunks with clear source markers
+- Applying token budget constraints to fit model context windows
+- Building augmented prompts with system instructions, context, and questions
+- Tracking source metadata for citation and auditing
+
+### Running the Demonstration
+
+```bash
+python experiments/context_injection_demo.py
+```
+
+The demonstration:
+
+1. Retrieves chunks for a sample question using the existing retriever
+2. Shows token budget behavior with both small and normal budgets
+3. Displays source marker formatting with actual chunk metadata
+4. Generates an augmented prompt with system instructions
+5. Saves detailed results to `experiments/outputs/context_injection_results.md`
+
+### Core Functions
+
+- `format_chunk_with_source()`: Formats chunks with source markers like `[1] source#chunk_index`
+- `count_tokens()`: Counts tokens using tiktoken (cl100k_base encoding)
+- `assemble_context()`: Assembles context respecting token budget (default: 5000 tokens)
+- `build_augmented_prompt()`: Creates complete augmented prompt with instructions
+- `get_max_context_tokens()`: Gets configured token budget from environment
+
+### Token Budget
+
+The system uses a configurable token budget to:
+
+- Prevent exceeding model context windows
+- Control API costs
+- Improve response times
+- Focus on the most relevant chunks
+
+Default budget: 5000 tokens (configurable via `MAX_CONTEXT_TOKENS` environment variable)
+
+### Source Markers
+
+Each chunk is formatted with a source marker:
+
+```
+[1] vaccination_guidance.txt#0
+```
+
+Where:
+- `[1]` is the retrieval rank
+- `vaccination_guidance.txt` is the source document
+- `#0` is the chunk index
+
+This enables:
+- Citation tracking in generated answers
+- Source verification by users
+- Audit trails for compliance
+- Transparency about information sources
+
+### Augmented Prompt Structure
+
+The final prompt structure:
+
+```
+You are a grounded assistant.
+Answer the question using only the provided context.
+Do not use outside knowledge.
+If the answer cannot be found in the provided context, say:
+'I don't have enough information in the provided context.'
+When possible, cite the source markers such as [1] or [2].
+
+Context:
+[1] source#chunk_index
+...
+
+Question:
+<user question>
+```
+
+### Testing
+
+Unit tests cover:
+
+- Source marker formatting correctness
+- Token budget enforcement
+- Chunk exclusion when budget exceeded
+- Token calculation accuracy
+- Source metadata tracking
+- Empty retrieval handling
+- Large chunk handling
+- Retrieval order preservation
+- Augmented prompt structure
+
+```bash
+pytest tests/test_context_injection.py
+```
+
+### Example Results
+
+Sample demonstration output:
+
+- **Question**: "What are the priority groups for vaccination?"
+- **Retrieved chunks**: 2
+- **Token budget (small)**: 300 tokens → 1 chunk included, 1 excluded
+- **Token budget (normal)**: 5000 tokens → 2 chunks included, 0 excluded
+- **Context tokens**: 627 / 5000
+- **Source markers**: `[1] vaccination_guidance.txt#0`, `[2] vaccination_guidance.txt#1`
+
+### Limitations
+
+- Deterministic embeddings used for demonstration when no API key available
+- Small document collection (2 chunks) limits demonstration scope
+- Token budget is fixed per request (not adaptive)
+
+See [context injection documentation](docs/context-injection.md) for detailed information.
+
 ### Validation
 
 The embedding generation includes comprehensive validation:
