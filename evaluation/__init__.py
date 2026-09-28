@@ -1,5 +1,12 @@
 """Evaluation module for retrieval tuning experiments and evaluation metrics."""
 
+from .embedding_sanity import (
+    SanityCheckResult,
+    SanityReport,
+    SanityTestCase,
+    format_sanity_report,
+    run_embedding_sanity_checks,
+)
 from .evaluate_retrieval import (
     EvaluationSummary,
     QueryLabel,
@@ -23,6 +30,11 @@ from .tuning import (
 )
 
 __all__ = [
+    "SanityTestCase",
+    "SanityCheckResult",
+    "SanityReport",
+    "run_embedding_sanity_checks",
+    "format_sanity_report",
     "QueryEvaluationResult",
     "RetrievalConfig",
     "RetrievalEvaluation",

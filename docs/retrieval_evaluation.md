@@ -221,6 +221,31 @@ Tests cover:
 - Edge cases (empty results, k larger than available, duplicates)
 - Dataclass validation
 
+## Embedding Sanity Checks
+
+For a quick embedding smoke test, run:
+
+```bash
+python -m evaluation.run_embedding_sanity
+```
+
+This loads the known queries and expected sources from `evaluation/labelled_queries.json`,
+embeds each query, and ranks the stored chunk vectors by cosine similarity. A query passes
+when its expected source appears in the top three results. The report includes the top source,
+score, and expected source rank; failures help reveal unexpected ranking behavior. The command
+requires a populated Chroma collection and `OPENAI_API_KEY`. Keep `EMBEDDING_MODEL` set to the
+same model used to create the stored chunk vectors, since vectors from different models cannot
+be compared reliably.
+
+The source-level smoke test complements, rather than replaces, the chunk-ID based Recall@k and
+Precision@k evaluation above.
+
+Unit tests for the smoke-test logic can run without an API key:
+
+```bash
+python -m pytest tests/test_embedding_sanity.py
+```
+
 ## References
 
 - Information Retrieval: [Recall and Precision](https://en.wikipedia.org/wiki/Precision_and_recall)
