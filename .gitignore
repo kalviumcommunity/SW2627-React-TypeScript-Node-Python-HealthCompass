@@ -44,3 +44,6 @@ outputs/structured-*.md
 # Evaluation results (generated, can be regenerated)
 evaluation/results/*.json
 evaluation/results/*.md
+
+# Context injection demonstration results (generated, can be regenerated)
+experiments/outputs/context_injection_results.md
