@@ -122,12 +122,21 @@ def initialize_vector_store(
             collection = client.create_collection(
                 name=config.collection_name,
                 metadata={
+                    "embedding_dimension": config.embedding_dimension,
                     "hnsw:space": "cosine",
                     "hnsw:construction_ef": 200,
                     "hnsw:M": 16,
                 },
             )
             print(f"Created new collection: {config.collection_name}")
+
+        collection_metadata = collection.metadata or {}
+        stored_dimension = collection_metadata.get("embedding_dimension")
+        if stored_dimension is not None and stored_dimension != config.embedding_dimension:
+            raise VectorStoreError(
+                f"Collection dimension mismatch: expected {config.embedding_dimension}, "
+                f"found {stored_dimension}. Consider recreating the collection."
+            )
 
         # Verify collection dimension matches expected
         if collection.count() > 0:
@@ -140,6 +149,14 @@ def initialize_vector_store(
                         f"Collection dimension mismatch: expected {config.embedding_dimension}, "
                         f"found {actual_dimension}. Consider recreating the collection."
                     )
+
+        if stored_dimension is None:
+            collection.modify(
+                metadata={
+                    **collection_metadata,
+                    "embedding_dimension": config.embedding_dimension,
+                }
+            )
 
         print(f"Vector database initialized at: {config.db_path}")
         print(f"Collection: {config.collection_name}")
@@ -169,15 +186,18 @@ def insert_record(
         VectorStoreError: If insertion fails
     """
     try:
-        # Validate vector dimension
-        collection_data = collection.get(limit=1, include=["embeddings"])
-        if len(collection_data["embeddings"]) > 0:
-            expected_dimension = len(collection_data["embeddings"][0])
-            if len(record.embedding) != expected_dimension:
-                raise VectorStoreError(
-                    f"Vector dimension mismatch: expected {expected_dimension}, "
-                    f"got {len(record.embedding)}"
-                )
+        # Validate against the configured dimension, including on an empty collection.
+        expected_dimension = (collection.metadata or {}).get("embedding_dimension")
+        if expected_dimension is None:
+            collection_data = collection.get(limit=1, include=["embeddings"])
+            if len(collection_data["embeddings"]) > 0:
+                expected_dimension = len(collection_data["embeddings"][0])
+
+        if expected_dimension is not None and len(record.embedding) != expected_dimension:
+            raise VectorStoreError(
+                f"Vector dimension mismatch: expected {expected_dimension}, "
+                f"got {len(record.embedding)}"
+            )
 
         # ChromaDB requires non-empty metadata, so provide a default if empty
         metadata = record.metadata if record.metadata else {"default": "true"}

@@ -212,6 +212,22 @@ def test_insert_record_dimension_mismatch(test_config, test_record):
         insert_record(collection, bad_record)
 
 
+def test_insert_record_dimension_mismatch_on_empty_collection(test_config):
+    """Test that an empty collection rejects a vector with the wrong dimension."""
+    collection = initialize_vector_store(test_config)
+    bad_record = VectorRecord(
+        id="bad_record",
+        embedding=[0.1] * (test_config.embedding_dimension - 1),
+        text="test",
+        metadata={"source": "test.txt"},
+    )
+
+    with pytest.raises(VectorStoreError, match="Vector dimension mismatch"):
+        insert_record(collection, bad_record)
+
+    assert collection.count() == 0
+
+
 def test_get_record(test_config, test_record):
     """Test that a record can be retrieved by ID."""
     collection = initialize_vector_store(test_config)
