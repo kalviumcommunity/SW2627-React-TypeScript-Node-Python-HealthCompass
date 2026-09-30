@@ -7,7 +7,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from healthcompass.ingestion import EmbeddedChunk, index_embedded_chunks, to_vector_record
 from healthcompass.vector_store import (
+    BatchUpsertResult,
     RetrievalResult,
     VectorRecord,
     VectorStoreConfig,
@@ -20,6 +22,7 @@ from healthcompass.vector_store import (
     initialize_vector_store,
     insert_record,
     retrieve,
+    upsert_records,
 )
 
 
@@ -363,6 +366,101 @@ def test_multiple_records(test_config):
         assert retrieved is not None
         assert retrieved.id == record.id
         assert retrieved.text == record.text
+
+
+def test_upsert_records_batches_and_preserves_record_data(test_config):
+    """Batch indexing preserves vector data and is safe to repeat."""
+    collection = initialize_vector_store(test_config)
+    records = [
+        VectorRecord(
+            id=f"indexed_{index}",
+            embedding=[0.1] * test_config.embedding_dimension,
+            text=f"Indexed guidance {index}",
+            metadata={"source": "guidance.txt", "chunk_index": index, "section": None},
+        )
+        for index in range(3)
+    ]
+
+    result = upsert_records(collection, records, batch_size=2)
+
+    assert isinstance(result, BatchUpsertResult)
+    assert result.expected_count == 3
+    assert result.upserted_count == 3
+    assert result.indexed_count == 3
+    assert result.failures == []
+    for record in records:
+        stored = get_record(collection, record.id)
+        assert stored is not None
+        assert list(stored.embedding) == pytest.approx(record.embedding)
+        assert stored.text == record.text
+        assert stored.metadata == {"source": "guidance.txt", "chunk_index": record.metadata["chunk_index"]}
+
+    repeated = upsert_records(collection, records, batch_size=2)
+    assert repeated.upserted_count == 3
+    assert repeated.indexed_count == 3
+
+
+def test_upsert_records_reports_failed_batch_and_continues(test_config):
+    """A bad vector fails its batch but does not prevent later batches."""
+    collection = initialize_vector_store(test_config)
+    records = [
+        VectorRecord("bad", [0.1], "bad vector", {"source": "test.txt"}),
+        VectorRecord(
+            "good",
+            [0.1] * test_config.embedding_dimension,
+            "valid vector",
+            {"source": "test.txt"},
+        ),
+    ]
+
+    result = upsert_records(collection, records, batch_size=1)
+
+    assert result.expected_count == 2
+    assert result.upserted_count == 1
+    assert result.indexed_count == 1
+    assert result.failures[0]["batch_start_id"] == "bad"
+    assert "dimension mismatch" in result.failures[0]["error"]
+    assert get_record(collection, "good") is not None
+
+
+def test_upsert_records_requires_positive_batch_size(test_config):
+    collection = initialize_vector_store(test_config)
+
+    with pytest.raises(ValueError, match="batch_size must be greater than 0"):
+        upsert_records(collection, [], batch_size=0)
+
+
+def test_index_embedded_chunks_uses_stable_ids_and_preserves_metadata(test_config):
+    """Embedded chunks are indexed with their source and metadata attached."""
+    collection = initialize_vector_store(test_config)
+    chunks = [
+        EmbeddedChunk(
+            text="Vaccination guidance",
+            source="guidance.txt",
+            filename="guidance.txt",
+            chunk_id=0,
+            metadata={"section": "Overview", "chunk_index": 0},
+            embedding=[0.1] * test_config.embedding_dimension,
+            embedding_model="text-embedding-3-small",
+        )
+    ]
+
+    record = to_vector_record(chunks[0])
+    result = index_embedded_chunks(collection, chunks, batch_size=1)
+
+    assert result.expected_count == result.upserted_count == result.indexed_count == 1
+    assert result.failures == []
+    stored = get_record(collection, record.id)
+    assert stored is not None
+    assert stored.text == chunks[0].text
+    assert stored.metadata == {
+        "section": "Overview",
+        "chunk_index": 0,
+        "source": "guidance.txt",
+        "filename": "guidance.txt",
+        "chunk_id": "0",
+    }
+    assert list(stored.embedding) == pytest.approx(chunks[0].embedding)
 
 
 def test_metadata_preservation(test_config):

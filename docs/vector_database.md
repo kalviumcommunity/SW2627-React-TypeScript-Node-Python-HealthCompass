@@ -147,6 +147,33 @@ record = VectorRecord(
 insert_record(collection, record)
 ```
 
+### Index Embedded Chunks in Batches
+
+`EmbeddedChunk` records are converted to vector records with a deterministic ID, then upserted in batches. The result reports how many records were expected and written, the collection count, and any failed batches.
+
+```python
+from healthcompass.ingestion import index_embedded_chunks, to_vector_record
+from healthcompass.vector_store import get_record
+
+result = index_embedded_chunks(collection, embedding_result.embedded_chunks, batch_size=100)
+print("expected chunks:", result.expected_count)
+print("upserted this run:", result.upserted_count)
+print("indexed count:", result.indexed_count)
+print("failures:", result.failures)
+
+if result.failures or result.indexed_count != result.expected_count:
+    raise RuntimeError("Vector indexing verification failed")
+
+sample = embedding_result.embedded_chunks[0]
+stored = get_record(collection, to_vector_record(sample).id)
+assert stored is not None
+assert stored.text == sample.text
+assert stored.metadata["source"] == sample.source
+assert len(stored.embedding) == len(sample.embedding)
+```
+
+Re-indexing the same content uses the same ID and updates the existing record instead of creating a duplicate. Content changes produce a new ID; remove records for chunks no longer present when maintaining a changed corpus.
+
 ### Retrieve a Record
 
 ```python

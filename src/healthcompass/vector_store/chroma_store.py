@@ -35,6 +35,16 @@ class VectorRecord:
 
 
 @dataclass
+class BatchUpsertResult:
+    """Outcome of a batched vector-record upsert."""
+
+    expected_count: int
+    upserted_count: int
+    indexed_count: int
+    failures: List[Dict[str, str]]
+
+
+@dataclass
 class RetrievalResult:
     """A result from similarity search retrieval."""
 
@@ -214,6 +224,61 @@ def insert_record(
 
     except Exception as e:
         raise VectorStoreError(f"Failed to insert record: {e}")
+
+
+def upsert_records(
+    collection: chromadb.Collection,
+    records: List[VectorRecord],
+    batch_size: int = 100,
+) -> BatchUpsertResult:
+    """Upsert vector records in batches and report indexing integrity details.
+
+    Existing IDs are replaced, so repeating an indexing run does not create
+    duplicate records. Failed batches are reported while later batches continue.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size must be greater than 0")
+
+    expected_dimension = (collection.metadata or {}).get("embedding_dimension")
+    if expected_dimension is None:
+        collection_data = collection.get(limit=1, include=["embeddings"])
+        if len(collection_data["embeddings"]) > 0:
+            expected_dimension = len(collection_data["embeddings"][0])
+
+    expected_count = len(records)
+    upserted_count = 0
+    failures = []
+
+    for start in range(0, expected_count, batch_size):
+        batch = records[start : start + batch_size]
+        try:
+            for record in batch:
+                if expected_dimension is not None and len(record.embedding) != expected_dimension:
+                    raise VectorStoreError(
+                        f"Vector dimension mismatch: expected {expected_dimension}, "
+                        f"got {len(record.embedding)}"
+                    )
+
+            collection.upsert(
+                ids=[record.id for record in batch],
+                embeddings=[record.embedding for record in batch],
+                documents=[record.text for record in batch],
+                metadatas=[
+                    {key: value for key, value in record.metadata.items() if value is not None}
+                    or {"default": "true"}
+                    for record in batch
+                ],
+            )
+            upserted_count += len(batch)
+        except Exception as error:
+            failures.append({"batch_start_id": batch[0].id, "error": str(error)})
+
+    return BatchUpsertResult(
+        expected_count=expected_count,
+        upserted_count=upserted_count,
+        indexed_count=collection.count(),
+        failures=failures,
+    )
 
 
 def get_record(

@@ -1,6 +1,7 @@
 """Vector store for HealthCompass RAG system."""
 
 from .chroma_store import (
+    BatchUpsertResult,
     RetrievalResult,
     VectorRecord,
     VectorStoreConfig,
@@ -13,9 +14,11 @@ from .chroma_store import (
     initialize_vector_store,
     insert_record,
     retrieve,
+    upsert_records,
 )
 
 __all__ = [
+    "BatchUpsertResult",
     "RetrievalResult",
     "VectorRecord",
     "VectorStoreConfig",
@@ -28,4 +31,5 @@ __all__ = [
     "initialize_vector_store",
     "insert_record",
     "retrieve",
+    "upsert_records",
 ]
