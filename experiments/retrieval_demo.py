@@ -34,6 +34,7 @@ def format_retrieval_results(results, k_value):
 
     for result in results:
         output += f"\nRank: {result.rank}\n"
+        output += f"Similarity: {result.score:.4f}\n"
         output += f"Distance: {result.distance:.4f}\n"
         output += f"Chunk ID: {result.chunk_id}\n"
         output += f"Source: {result.metadata.get('source', 'N/A')}\n"
@@ -189,6 +190,7 @@ def main():
 
             for result in all_results[k]:
                 f.write(f"#### Rank {result.rank}\n\n")
+                f.write(f"**Similarity:** {result.score:.4f}\n")
                 f.write(f"**Distance:** {result.distance:.4f}\n")
                 f.write(f"**Chunk ID:** {result.chunk_id}\n")
                 f.write(f"**Source:** {result.metadata.get('source', 'N/A')}\n")

@@ -105,9 +105,12 @@ class RetrievalResult:
     rank: int              # 1 for most similar, 2 for second, etc.
     chunk_id: str         # Unique identifier for the chunk
     distance: float        # Cosine distance (lower = more similar)
+    score: float           # Cosine similarity (higher = more similar)
     text: str             # Original chunk text
     metadata: dict        # Source information and chunk details
 ```
+
+The `score` property is calculated as `1 - distance`, matching ChromaDB's cosine-distance metric.
 
 ### Metadata Fields
 - **source**: Original document source
@@ -137,6 +140,7 @@ results = retrieve(
 # Display results
 for result in results:
     print(f"Rank: {result.rank}")
+    print(f"Similarity: {result.score:.4f}")
     print(f"Distance: {result.distance:.4f}")
     print(f"Text: {result.text}")
     print(f"Source: {result.metadata.get('source', 'N/A')}")

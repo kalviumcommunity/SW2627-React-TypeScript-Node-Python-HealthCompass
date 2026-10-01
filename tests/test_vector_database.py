@@ -623,6 +623,7 @@ def test_retrieve_includes_ids_scores_text_metadata(test_config):
             assert len(results) == 1
             assert results[0].chunk_id == "chunk_0"
             assert results[0].distance == 0.1
+            assert results[0].score == pytest.approx(0.9)
             assert results[0].text == "test text"
             assert results[0].metadata == {"source": "test.txt", "chunk_id": "0"}
             assert results[0].rank == 1
@@ -704,6 +705,7 @@ def test_retrieval_result_creation():
     assert result.rank == 1
     assert result.chunk_id == "test_id"
     assert result.distance == 0.1
+    assert result.score == pytest.approx(0.9)
     assert result.text == "test text"
     assert result.metadata == {"key": "value"}
 

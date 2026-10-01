@@ -54,6 +54,11 @@ class RetrievalResult:
     text: str
     metadata: Dict[str, Any]
 
+    @property
+    def score(self) -> float:
+        """Return cosine similarity; ChromaDB's cosine distance is 1 - similarity."""
+        return 1 - self.distance
+
 
 class VectorStoreError(Exception):
     """Custom exception for vector store operations."""
