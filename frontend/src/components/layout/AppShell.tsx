@@ -10,7 +10,8 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getUnreadCount } from '../../api/client';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -23,7 +24,15 @@ const navigation = [
 
 function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const location = useLocation();
+
+  useEffect(() => {
+    // Load unread count
+    getUnreadCount()
+      .then((data) => setUnreadCount(data.count))
+      .catch(console.error);
+  }, [location]); // Reload when location changes to update after reading
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -67,19 +76,27 @@ function AppShell() {
           <nav className="flex-1 p-3 space-y-1">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
+              const showBadge = item.name === 'Updates' && unreadCount > 0;
               return (
                 <Link
                   key={item.name}
                   to={item.href}
                   onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive
                       ? 'bg-teal-50 text-teal-700'
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.name}
+                  <div className="flex items-center gap-3">
+                    <item.icon className="h-4 w-4" />
+                    {item.name}
+                  </div>
+                  {showBadge && (
+                    <span className="bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full">
+                      {unreadCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

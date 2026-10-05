@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 from dotenv import load_dotenv
+import openai
 
 from healthcompass.providers import get_embedding_provider
 
@@ -169,12 +170,12 @@ def initialize_vector_store(
                     )
 
         if stored_dimension is None:
-            collection.modify(
-                metadata={
-                    **collection_metadata,
-                    "embedding_dimension": config.embedding_dimension,
-                }
-            )
+            try:
+                safe_metadata = {k: v for k, v in collection_metadata.items() if not k.startswith("hnsw:")}
+                safe_metadata["embedding_dimension"] = config.embedding_dimension
+                collection.modify(metadata=safe_metadata)
+            except Exception:
+                pass
 
         print(f"Vector database initialized at: {config.db_path}")
         print(f"Collection: {config.collection_name}")
@@ -388,9 +389,24 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
     Raises:
         VectorStoreError: If embedding generation fails
     """
+    provider_name = os.getenv("EMBEDDING_PROVIDER")
+    if provider_name == "local":
+        try:
+            provider = get_embedding_provider()
+            return provider.embed_query(query)
+        except Exception as e:
+            raise VectorStoreError(f"Failed to embed query: {e}") from e
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise VectorStoreError("OPENAI_API_KEY environment variable is not set")
+
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model = embedding_model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+
     try:
         client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        response = client.embeddings.create(input=[query], model=embedding_model)
+        response = client.embeddings.create(input=[query], model=model)
         return response.data[0].embedding
     except openai.RateLimitError as e:
         raise VectorStoreError(f"Rate limit error during query embedding: {e}") from e

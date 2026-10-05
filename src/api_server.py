@@ -1,6 +1,11 @@
-"""FastAPI server for HealthCompass RAG application."""
+"""FastAPI server for HealthCompass RAG application, Guidance Library, and Dashboard."""
 
-from typing import List, Optional
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Any, List, Optional
 
 # Ensure src/ is on sys.path for direct module imports
 src_dir = str(Path(__file__).resolve().parent)
@@ -8,17 +13,29 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
-from healthcompass.providers import get_chat_provider, get_embedding_provider
+from healthcompass.dashboard_service import DashboardResponse, DashboardService
+from healthcompass.guidance_service import GuidanceDocument, GuidanceService
+from healthcompass.providers import get_chat_provider
 from healthcompass.rag import build_augmented_prompt
-from healthcompass.vector_store import initialize_vector_store, retrieve
+from healthcompass.vector_store import (
+    RetrievalResult,
+    VectorRecord,
+    initialize_vector_store,
+    retrieve,
+)
 
 load_dotenv()
 
-app = FastAPI(title="HealthCompass API", version="1.0.0")
+app = FastAPI(
+    title="HealthCompass API",
+    version="2.0.0",
+    description="Public Health Guidance Intelligence & RAG Operations Platform",
+)
 
 # Configure CORS
 app.add_middleware(
@@ -27,17 +44,31 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:3000",
-    ],  # Vite default ports
+        "http://localhost:3001",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "*",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+guidance_service = GuidanceService()
+dashboard_service = DashboardService(guidance_service=guidance_service)
+
+
+# ─── Pydantic Models ─────────────────────────────────────────────────
 
 
 class AskRequest(BaseModel):
     """Request model for ask endpoint."""
 
     question: str
+    document_id: Optional[str] = None
+    top_k: int = 5
 
 
 class SourceInfo(BaseModel):
@@ -49,6 +80,12 @@ class SourceInfo(BaseModel):
     rank: int
     distance: float
     excerpt: str = ""
+    document_id: Optional[str] = None
+    document_title: Optional[str] = None
+    page_number: Optional[str] = None
+    authority: Optional[str] = None
+    version: Optional[str] = None
+    relevance_score: Optional[float] = None
 
 
 class AskResponse(BaseModel):
@@ -58,22 +95,19 @@ class AskResponse(BaseModel):
     sources: List[SourceInfo]
     context_tokens: int
     chunks_used: int
+    document_scope: Optional[str] = None
 
 
-class GuidanceItem(BaseModel):
-    """Guidance item for library."""
+class GuidanceUploadResponse(BaseModel):
+    """Response returned when a document is uploaded and indexed."""
 
-    id: str
-    title: str
-    topic: str
-    description: str
-    source: str
-    last_updated: str
+    success: bool
+    message: str
+    document: dict[str, Any]
+    chunks_indexed: int
 
 
 class AlertItem(BaseModel):
-    """Alert item for alert center."""
-
     id: str
     severity: str
     topic: str
@@ -84,8 +118,6 @@ class AlertItem(BaseModel):
 
 
 class UpdateItem(BaseModel):
-    """Policy update item."""
-
     id: str
     title: str
     category: str
@@ -94,238 +126,89 @@ class UpdateItem(BaseModel):
     importance: str
 
 
-# Sample/demo data for pages that don't have backend data yet
-SAMPLE_GUIDANCE = [
-    GuidanceItem(
-        id="1",
-        title="Vaccination Priority Groups",
-        topic="Vaccination",
-        description="Guidance on priority groups for vaccination during public health emergencies",
-        source="vaccination_guidance.txt",
-        last_updated="2026-09-15",
-    ),
-    GuidanceItem(
-        id="2",
-        title="Fever Management in Children",
-        topic="Child Health",
-        description="Protocol for managing high fever in pediatric patients",
-        source="child_health_guidance.txt",
-        last_updated="2026-09-10",
-    ),
-    GuidanceItem(
-        id="3",
-        title="Emergency Response Protocol",
-        topic="Emergency Response",
-        description="Standard operating procedures for emergency health situations",
-        source="emergency_protocol.txt",
-        last_updated="2026-09-08",
-    ),
-]
-
 SAMPLE_ALERTS = [
     AlertItem(
         id="1",
         severity="Critical",
-        topic="Disease Outbreak",
+        topic="Nipah Virus Outbreak",
         location="District A",
-        date="2026-09-28",
-        description="Increased respiratory illness cases reported in District A",
+        date="2026-09-01",
+        description="Confirmed positive case in sector 4. Enhanced barrier nursing and Tier-2 PPE active.",
         status="Active",
     ),
     AlertItem(
         id="2",
-        severity="High",
-        topic="Vaccine Supply",
-        location="Regional",
-        date="2026-09-25",
-        description="Temporary vaccine shortage due to supply chain delays",
-        status="Monitoring",
+        severity="Warning",
+        topic="Vaccine Cold Chain Disruption",
+        location="North Sector",
+        date="2026-09-02",
+        description="Power outage affected sub-depot storage. Re-testing batch potency.",
+        status="Investigating",
     ),
 ]
 
 SAMPLE_UPDATES = [
     UpdateItem(
         id="1",
-        title="Updated Isolation Guidelines",
-        category="Infection Control",
-        date="2026-09-27",
-        summary="New isolation protocols for respiratory infections",
+        title="Vaccination Priority Framework Revision",
+        category="Vaccination",
+        date="2026-08-15",
+        summary="Updated Tier-1 priority list to include all clinical triage personnel.",
         importance="High",
     ),
     UpdateItem(
         id="2",
-        title="Vaccination Schedule Changes",
-        category="Vaccination",
-        date="2026-09-20",
-        summary="Revised dosing intervals for booster vaccinations",
-        importance="Medium",
+        title="Field Infection Control SOP v2.0",
+        category="Infection Control",
+        date="2026-07-20",
+        summary="Mandatory double-gloving protocol for viral hemorrhagic/respiratory intake.",
+        importance="Routine",
     ),
 ]
 
 
-@app.get("/")
-def read_root():
-    """Root endpoint."""
-    return {"message": "HealthCompass API", "version": "1.0.0"}
+# ─── System & Health Endpoints ───────────────────────────────────────
 
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint with provider information."""
-    try:
-        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
-        chat_provider = os.getenv("CHAT_PROVIDER", "groq")
-        embedding_model = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-        if embedding_provider == "openai":
-            embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-        chat_model = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
-        if chat_provider == "openai":
-            chat_model = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-
-        return {
-            "status": "healthy",
-            "chat_provider": chat_provider,
-            "embedding_provider": embedding_provider,
-            "chat_model": chat_model,
-            "embedding_model": embedding_model,
-        }
-    except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
+    """Health check endpoint indicating RAG system status."""
+    return {
+        "status": "healthy",
+        "chat_provider": os.getenv("CHAT_PROVIDER", "groq"),
+        "embedding_provider": os.getenv("EMBEDDING_PROVIDER", "local"),
+        "chat_model": os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile"),
+        "embedding_model": os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
+        "total_guidance_documents": len(guidance_service.list_documents()),
+    }
 
 
-@app.post("/ask", response_model=AskResponse)
-def ask_healthcompass(request: AskRequest):
-    """
-    Ask HealthCompass a question using RAG pipeline.
-
-    This endpoint:
-    1. Embeds the user query using configured provider
-    2. Retrieves relevant chunks from vector database
-    3. Builds augmented prompt with context
-    4. Generates answer using configured chat provider
-    5. Returns answer with sources
-    """
-    try:
-        # Initialize vector database
-        collection = initialize_vector_store()
-
-        # If provider-specific collection is empty, check if base collection has indexed documents
-        if collection.count() == 0:
-            try:
-                import chromadb
-                db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
-                base_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
-                fallback_client = chromadb.PersistentClient(path=db_path)
-                fallback_col = fallback_client.get_collection(name=base_name)
-                if fallback_col.count() > 0:
-                    collection = fallback_col
-            except Exception:
-                pass
-
-        if collection.count() == 0:
-            return AskResponse(
-                answer="No documents are currently indexed in the knowledge base. Please run the ingestion pipeline to index public-health guidelines and directives.",
-                sources=[],
-                context_tokens=0,
-                chunks_used=0,
-            )
-
-        # Try to retrieve relevant chunks
-        try:
-            retrieved_chunks = retrieve(request.question, k=5, collection=collection)
-        except Exception as e:
-            error_msg = str(e)
-            if "empty collection" in error_msg.lower():
-                return AskResponse(
-                    answer="No documents found in the current collection. Please run ingestion to index guidance documents.",
-                    sources=[],
-                    context_tokens=0,
-                    chunks_used=0,
-                )
-            raise
-
-        if not retrieved_chunks:
-            return AskResponse(
-                answer="I don't have enough information in the provided context to answer this question.",
-                sources=[],
-                context_tokens=0,
-                chunks_used=0,
-            )
-
-        # Build augmented prompt
-        prompt_result = build_augmented_prompt(request.question, retrieved_chunks)
-
-        # Generate answer using chat provider
-        try:
-            chat_provider = get_chat_provider()
-            answer = chat_provider.generate(
-                prompt=prompt_result.prompt,
-                temperature=0.1,
-                max_tokens=1000,
-            )
-        except Exception as e:
-            error_msg = str(e)
-            # Synthesize direct evidence answer from retrieved chunks if LLM key is unconfigured
-            excerpts_text = "\n\n".join([f"**Excerpt {i+1}**:\n> {chunk.text.strip()[:350]}..." for i, chunk in enumerate(retrieved_chunks[:2])])
-            answer = (
-                f"### Evidence-Based Guidance Summary\n\n"
-                f"Based on the official retrieved guidelines for *\"{request.question}\"*:\n\n"
-                f"{excerpts_text}\n\n"
-                f"> **Notice**: Configure `GROQ_API_KEY` or `OPENAI_API_KEY` in your `.env` file to enable full LLaMA 3.3 conversational synthesis."
-            )
-
-        # Build a map of chunk_id -> text from retrieved chunks
-        chunk_text_map = {chunk.chunk_id: chunk.text for chunk in retrieved_chunks}
-
-        # Convert sources to response format
-        sources = [
-            SourceInfo(
-                chunk_id=source_info["chunk_id"],
-                source=source_info["source"],
-                chunk_index=source_info["chunk_index"],
-                rank=source_info["rank"],
-                distance=source_info["distance"],
-                excerpt=chunk_text_map.get(source_info["chunk_id"], "")[:500],
-            )
-            for source_info in prompt_result.sources_used
-        ]
-
-        return AskResponse(
-            answer=answer,
-            sources=sources,
-            context_tokens=prompt_result.context_tokens,
-            chunks_used=prompt_result.chunks_used,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_msg = str(e)
-        if "OPENAI_API_KEY" in error_msg:
-            raise HTTPException(
-                status_code=503,
-                detail="Service temporarily unavailable: OpenAI API key not configured. Please contact your administrator.",
-            ) from e
-        raise HTTPException(status_code=500, detail=str(e)) from e
+# ─── Dashboard Endpoints ─────────────────────────────────────────────
 
 
-@app.get("/guidance", response_model=List[GuidanceItem])
-def get_guidance():
-    """Get available guidance documents."""
-    return SAMPLE_GUIDANCE
+@app.get("/api/dashboard")
+@app.get("/dashboard")
+def get_dashboard():
+    """Get complete dashboard operational metrics, directives, surveillance trends, and activity."""
+    return dashboard_service.get_dashboard().to_dict()
 
 
-@app.get("/guidance/search", response_model=List[GuidanceItem])
-def search_guidance(query: str):
-    """Search guidance by topic or title."""
-    query_lower = query.lower()
-    return [
-        item
-        for item in SAMPLE_GUIDANCE
-        if query_lower in item.title.lower()
-        or query_lower in item.topic.lower()
-        or query_lower in item.description.lower()
-    ]
+@app.get("/stats")
+def get_stats():
+    """Legacy dashboard statistics with contextual subtitles."""
+    docs = guidance_service.list_documents()
+    active_alerts_count = len(SAMPLE_ALERTS)
+    critical_alerts = sum(1 for a in SAMPLE_ALERTS if a.severity.lower() == "critical")
+    return {
+        "active_alerts": active_alerts_count,
+        "active_alerts_subtitle": f"{critical_alerts} critical" if critical_alerts else "All stable",
+        "new_guidance": len(docs),
+        "new_guidance_subtitle": f"{len(docs)} active in library",
+        "policy_updates": len(SAMPLE_UPDATES),
+        "policy_updates_subtitle": "Latest v4.2",
+        "saved_guidance": 8,
+        "saved_guidance_subtitle": "Frequently used",
+    }
 
 
 @app.get("/alerts", response_model=List[AlertItem])
@@ -340,20 +223,333 @@ def get_updates():
     return SAMPLE_UPDATES
 
 
-@app.get("/stats")
-def get_stats():
-    """Get dashboard statistics with contextual subtitles."""
-    critical_count = sum(1 for a in SAMPLE_ALERTS if a.severity == "Critical")
-    return {
-        "active_alerts": len(SAMPLE_ALERTS),
-        "active_alerts_subtitle": f"{critical_count} critical" if critical_count else "All stable",
-        "new_guidance": len(SAMPLE_GUIDANCE),
-        "new_guidance_subtitle": f"{len(SAMPLE_GUIDANCE)} added this week",
-        "policy_updates": len(SAMPLE_UPDATES),
-        "policy_updates_subtitle": "Latest v4.2",
-        "saved_guidance": 8,
-        "saved_guidance_subtitle": "Frequently used",
-    }
+# ─── Guidance Library Endpoints ──────────────────────────────────────
+
+
+@app.get("/api/guidance")
+@app.get("/guidance")
+def get_guidance(
+    search: Optional[str] = Query(None, description="Search query across title, description, authority, tags"),
+    status: Optional[str] = Query(None, description="Filter by document status: active, processing, archived, failed"),
+    category: Optional[str] = Query(None, description="Filter by category: Outbreak, Vaccination, PPE, Emergency, etc."),
+    region: Optional[str] = Query(None, description="Filter by region: National, District A, etc."),
+):
+    """Get list of guidance documents matching filters."""
+    docs = guidance_service.list_documents(
+        search=search,
+        status=status,
+        category=category,
+        region=region,
+    )
+    return [d.to_dict() for d in docs]
+
+
+@app.get("/guidance/search")
+def search_guidance(query: str):
+    """Search guidance documents by topic or title (compatibility endpoint)."""
+    docs = guidance_service.list_documents(search=query)
+    return [d.to_dict() for d in docs]
+
+
+@app.get("/api/guidance/{document_id}")
+@app.get("/guidance/{document_id}")
+def get_guidance_by_id(document_id: str):
+    """Get single guidance document metadata."""
+    doc = guidance_service.get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Guidance document '{document_id}' not found.")
+    return doc.to_dict()
+
+
+@app.get("/api/guidance/{document_id}/file")
+@app.get("/guidance/{document_id}/file")
+def get_guidance_file(document_id: str):
+    """Safely stream the uploaded guidance document file for in-browser PDF/text preview."""
+    doc = guidance_service.get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Guidance document not found.")
+
+    file_path = Path(doc.file_path).resolve()
+    # Path traversal protection: ensure file resides inside data/documents
+    base_dir = Path("data/documents").resolve()
+    try:
+        file_path.relative_to(base_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied: invalid file path.")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Document file not found on disk.")
+
+    media_type = doc.mime_type or "application/octet-stream"
+    if file_path.suffix.lower() == ".pdf":
+        media_type = "application/pdf"
+    elif file_path.suffix.lower() in {".txt", ".md"}:
+        media_type = "text/plain; charset=utf-8"
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=doc.filename,
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/guidance/upload", response_model=GuidanceUploadResponse)
+@app.post("/guidance/upload", response_model=GuidanceUploadResponse)
+async def upload_guidance(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    category: str = Form(...),
+    description: str = Form(""),
+    region: str = Form("National"),
+    authority: str = Form("National Public Health Authority"),
+    version: str = Form("1.0"),
+    effective_date: str = Form(""),
+    tags: str = Form(""),
+):
+    """Upload an official health guidance document (PDF, TXT, MD), process, and index it into ChromaDB."""
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+        doc = guidance_service.add_document(
+            file_bytes=content,
+            filename=file.filename or "uploaded_guidance.pdf",
+            title=title,
+            category=category,
+            description=description,
+            region=region,
+            authority=authority,
+            version=version,
+            effective_date=effective_date,
+            tags=tag_list,
+        )
+
+        return GuidanceUploadResponse(
+            success=doc.status in {"active", "indexed"},
+            message=f"Guidance document '{doc.title}' uploaded and indexed successfully with {doc.chunk_count} knowledge chunks.",
+            document=doc.to_dict(),
+            chunks_indexed=doc.chunk_count,
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process and index document: {e}")
+
+
+@app.post("/api/guidance/{document_id}/archive")
+def archive_guidance(document_id: str):
+    """Archive a guidance document."""
+    doc = guidance_service.archive_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return {"success": True, "message": f"Document '{doc.title}' archived.", "document": doc.to_dict()}
+
+
+@app.post("/api/guidance/{document_id}/reindex")
+def reindex_guidance(document_id: str):
+    """Re-index an existing guidance document."""
+    doc = guidance_service.reindex_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return {"success": True, "message": f"Document '{doc.title}' re-indexed with {doc.chunk_count} chunks.", "document": doc.to_dict()}
+
+
+# ─── Ask HealthCompass RAG Endpoint ──────────────────────────────────
+
+
+@app.post("/api/ask", response_model=AskResponse)
+@app.post("/ask", response_model=AskResponse)
+def ask_question(request: AskRequest):
+    """Ask HealthCompass a question using the RAG pipeline.
+
+    Optionally filters retrieval to a specific document when request.document_id is provided.
+    """
+    try:
+        # 1. Initialize vector collection
+        collection = initialize_vector_store()
+
+        # If provider-specific collection has 0 items, check fallback collections
+        if collection.count() == 0:
+            try:
+                import chromadb
+                db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
+                client = chromadb.PersistentClient(path=db_path)
+                for col_name in ["healthcompass_documents", "healthcompass_documents_local"]:
+                    try:
+                        c = client.get_collection(col_name)
+                        if c.count() > 0:
+                            collection = c
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        if collection.count() == 0:
+            return AskResponse(
+                answer=(
+                    "### No Guidance Documents Indexed\n\n"
+                    "The HealthCompass knowledge base is currently empty. "
+                    "Please navigate to the **Guidance Library** and click **+ Add Guidance** to upload and index official clinical protocols and directives."
+                ),
+                sources=[],
+                context_tokens=0,
+                chunks_used=0,
+                document_scope=None,
+            )
+
+        # 2. Check if scoped to a specific document
+        doc_scope_name = None
+        where_filter = None
+        if request.document_id:
+            scoped_doc = guidance_service.get_document(request.document_id)
+            if scoped_doc:
+                doc_scope_name = f"{scoped_doc.title} (v{scoped_doc.version})"
+                # Filter by document_id in Chroma
+                where_filter = {"document_id": request.document_id}
+
+        # 3. Retrieve top-k chunks
+        retrieved_chunks: List[RetrievalResult] = []
+        try:
+            if where_filter:
+                # Retrieve with document filter
+                try:
+                    query_embeddings = None
+                    from healthcompass.vector_store import embed_query
+                    query_embeddings = embed_query(request.question)
+                    results = collection.query(
+                        query_embeddings=[query_embeddings],
+                        n_results=min(request.top_k, max(collection.count(), 1)),
+                        where=where_filter,
+                        include=["documents", "metadatas", "distances"],
+                    )
+                    if results["ids"] and results["ids"][0]:
+                        for i in range(len(results["ids"][0])):
+                            retrieved_chunks.append(
+                                RetrievalResult(
+                                    chunk_id=results["ids"][0][i],
+                                    source=results["metadatas"][0][i].get("source", ""),
+                                    chunk_index=results["metadatas"][0][i].get("chunk_id", str(i)),
+                                    distance=results["distances"][0][i] if results["distances"] else 0.0,
+                                    text=results["documents"][0][i],
+                                    metadata=results["metadatas"][0][i],
+                                )
+                            )
+                except Exception:
+                    # Fallback to general retrieval if where filter had no matches or unsupported
+                    retrieved_chunks = retrieve(request.question, k=request.top_k, collection=collection)
+            else:
+                retrieved_chunks = retrieve(request.question, k=request.top_k, collection=collection)
+        except Exception as e:
+            error_msg = str(e)
+            if "empty collection" in error_msg.lower():
+                return AskResponse(
+                    answer="No guidance documents are available in this collection.",
+                    sources=[],
+                    context_tokens=0,
+                    chunks_used=0,
+                )
+            raise
+
+        if not retrieved_chunks:
+            return AskResponse(
+                answer=(
+                    "### No Relevant Guidance Found\n\n"
+                    f"The current HealthCompass knowledge base does not contain enough relevant information to answer: *\"{request.question}\"*.\n\n"
+                    "**Suggested Actions:**\n"
+                    "- Try refining your clinical terms or question phrasing.\n"
+                    "- Browse the **Guidance Library** to check available protocols.\n"
+                    "- Upload the corresponding official guideline or circular."
+                ),
+                sources=[],
+                context_tokens=0,
+                chunks_used=0,
+                document_scope=doc_scope_name,
+            )
+
+        # 4. Build context-injected prompt
+        prompt_result = build_augmented_prompt(request.question, retrieved_chunks)
+
+        # 5. Synthesize answer with Groq LLaMA 3.3 or fallback to grounded excerpts
+        answer = ""
+        try:
+            chat_provider = get_chat_provider()
+            answer = chat_provider.generate(
+                prompt=prompt_result.prompt,
+                temperature=0.1,
+                max_tokens=1000,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            # Synthesize direct grounded evidence answer from retrieved chunks
+            excerpts_markdown = []
+            for i, chunk in enumerate(retrieved_chunks[:3]):
+                source_title = chunk.metadata.get("document_title") or chunk.source or "Official Protocol"
+                page_str = f", Page {chunk.metadata.get('page_number')}" if chunk.metadata.get("page_number") else ""
+                clean_text = chunk.text.strip().replace("\n", " ")
+                if len(clean_text) > 300:
+                    clean_text = clean_text[:300] + "..."
+                excerpts_markdown.append(
+                    f"**{i+1}. {source_title}{page_str}**\n> \"{clean_text}\""
+                )
+
+            answer = (
+                f"### Evidence-Based Guidance Summary\n\n"
+                f"Based on the approved clinical protocols retrieved for *\"{request.question}\"*:\n\n"
+                + "\n\n".join(excerpts_markdown)
+                + "\n\n---\n"
+                + "> **System Note**: Generative answer synthesis requires `GROQ_API_KEY` configured in `.env`. The evidence citations above are extracted directly from your indexed guidance documents."
+            )
+
+        # 6. Map source grounding details
+        chunk_map = {chunk.chunk_id: chunk for chunk in retrieved_chunks}
+        sources: List[SourceInfo] = []
+        for s in prompt_result.sources_used:
+            chunk = chunk_map.get(s["chunk_id"])
+            chunk_metadata = chunk.metadata if chunk else {}
+            dist = s.get("distance", 0.0)
+            rel_score = max(0.0, min(1.0, 1.0 - (dist / 2.0)))
+
+            sources.append(
+                SourceInfo(
+                    chunk_id=s["chunk_id"],
+                    source=s["source"],
+                    chunk_index=str(s["chunk_index"]),
+                    rank=s["rank"],
+                    distance=dist,
+                    excerpt=(chunk.text if chunk else "")[:450],
+                    document_id=chunk_metadata.get("document_id"),
+                    document_title=chunk_metadata.get("document_title") or s["source"],
+                    page_number=chunk_metadata.get("page_number"),
+                    authority=chunk_metadata.get("authority"),
+                    version=chunk_metadata.get("version"),
+                    relevance_score=round(rel_score, 2),
+                )
+            )
+
+        return AskResponse(
+            answer=answer,
+            sources=sources,
+            context_tokens=prompt_result.context_tokens,
+            chunks_used=prompt_result.chunks_used,
+            document_scope=doc_scope_name,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        if "OPENAI_API_KEY" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Service temporarily unavailable: OpenAI API key not configured.",
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 if __name__ == "__main__":

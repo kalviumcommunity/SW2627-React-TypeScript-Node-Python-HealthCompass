@@ -12,6 +12,7 @@ from healthcompass.ingestion import (
     EmbeddingError,
     EmbeddingManifest,
     EmbeddingRunSummary,
+    call_embedding_api_with_retry,
     cosine_similarity,
     estimate_cost,
     generate_chunk_id,

@@ -178,6 +178,165 @@ export interface UpdateItem {
   importance: string;
 }
 
+// ============================================================================
+// Policy Updates & Versioning API
+// ============================================================================
+
+export type Severity = 'Critical' | 'High' | 'Medium' | 'Low';
+export type UpdateCategory = 'outbreak' | 'vaccination' | 'ppe' | 'infection_control' | 'general';
+export type UpdateStatus = 'published' | 'draft' | 'superseded' | 'archived';
+
+export interface ChangedSection {
+  section_name: string;
+  previous_content: string;
+  new_content: string;
+  change_summary?: string;
+}
+
+export interface PolicyUpdate {
+  id: string;
+  document_id: string;
+  document_title: string;
+  previous_version_id: string;
+  new_version_id: string;
+  previous_version: string;
+  new_version: string;
+  category: UpdateCategory;
+  severity: Severity;
+  status: UpdateStatus;
+  title: string;
+  summary: string;
+  previous_instruction: string;
+  new_instruction: string;
+  changed_sections: ChangedSection[];
+  effective_date?: string;
+  published_at: string;
+  published_by?: string;
+  authority?: string;
+  change_reason?: string;
+  impact?: string;
+  region?: string;
+  is_read: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateListResponse {
+  items: PolicyUpdate[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  version: string;
+  title: string;
+  content: string;
+  source_file?: string;
+  effective_date?: string;
+  published_date?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface DiffChange {
+  type: 'added' | 'removed' | 'unchanged';
+  content: string;
+  position: number;
+}
+
+export interface SectionDiff {
+  section_name: string;
+  change_summary?: string;
+  diff: DiffChange[];
+}
+
+export interface UpdateDiffResponse {
+  update_id: string;
+  document_title: string;
+  previous_version: string;
+  new_version: string;
+  main_diff: DiffChange[];
+  section_diffs: SectionDiff[];
+  summary: {
+    total_changes: number;
+    added_count: number;
+    removed_count: number;
+    unchanged_count: number;
+    change_percentage: number;
+  };
+}
+
+export async function getUpdates(
+  params?: {
+    category?: UpdateCategory;
+    search?: string;
+    status?: UpdateStatus;
+    page?: number;
+    page_size?: number;
+  }
+): Promise<UpdateListResponse> {
+  const queryParams = new URLSearchParams();
+  if (params?.category) queryParams.set('category', params.category);
+  if (params?.search) queryParams.set('search', params.search);
+  if (params?.status) queryParams.set('status', params.status);
+  if (params?.page) queryParams.set('page', params.page.toString());
+  if (params?.page_size) queryParams.set('page_size', params.page_size.toString());
+  
+  const queryString = queryParams.toString();
+  return apiCall<UpdateListResponse>(`/api/updates${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function getUpdateDetail(updateId: string): Promise<PolicyUpdate> {
+  return apiCall<PolicyUpdate>(`/api/updates/${updateId}`);
+}
+
+export async function getArchivedUpdates(
+  params?: { page?: number; page_size?: number }
+): Promise<UpdateListResponse> {
+  const queryParams = new URLSearchParams();
+  if (params?.page) queryParams.set('page', params.page.toString());
+  if (params?.page_size) queryParams.set('page_size', params.page_size.toString());
+  
+  const queryString = queryParams.toString();
+  return apiCall<UpdateListResponse>(`/api/updates/archive${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function markUpdateAsRead(updateId: string): Promise<{ status: string; message: string }> {
+  return apiCall<{ status: string; message: string }>(`/api/updates/${updateId}/read`, {
+    method: 'POST',
+  });
+}
+
+export async function getUnreadCount(): Promise<{ count: number }> {
+  return apiCall<{ count: number }>('/api/updates/unread/count');
+}
+
+export async function getDocumentVersion(versionId: string): Promise<DocumentVersion> {
+  return apiCall<DocumentVersion>(`/api/versions/${versionId}`);
+}
+
+export async function getDocumentVersions(documentId: string): Promise<{
+  document_id: string;
+  versions: DocumentVersion[];
+  total: number;
+}> {
+  return apiCall<{ document_id: string; versions: DocumentVersion[]; total: number }>(
+    `/api/documents/${documentId}/versions`
+  );
+}
+
+export async function getUpdateDiff(updateId: string): Promise<UpdateDiffResponse> {
+  return apiCall<UpdateDiffResponse>(`/api/updates/${updateId}/diff`);
+}
+
+// ============================================================================
+// Legacy Exports (other pages still use these)
+// ============================================================================
+
 export async function getGuidance(): Promise<GuidanceItem[]> {
   return apiCall<GuidanceItem[]>('/guidance');
 }
@@ -190,7 +349,8 @@ export async function getAlerts(): Promise<AlertItem[]> {
   return apiCall<AlertItem[]>('/alerts');
 }
 
-export async function getUpdates(): Promise<UpdateItem[]> {
+// Legacy update endpoint for backward compatibility
+export async function getLegacyUpdates(): Promise<UpdateItem[]> {
   return apiCall<UpdateItem[]>('/updates');
 }
 

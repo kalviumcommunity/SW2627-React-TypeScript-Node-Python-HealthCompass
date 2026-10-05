@@ -4,6 +4,8 @@ import Dashboard from './pages/Dashboard';
 import AskHealthCompass from './pages/AskHealthCompass';
 import GuidanceLibrary from './pages/GuidanceLibrary';
 import Updates from './pages/Updates';
+import UpdateDetail from './pages/UpdateDetail';
+import Archive from './pages/Archive';
 import Alerts from './pages/Alerts';
 import SavedGuidance from './pages/SavedGuidance';
 
@@ -16,6 +18,8 @@ function App() {
           <Route path="ask" element={<AskHealthCompass />} />
           <Route path="guidance" element={<GuidanceLibrary />} />
           <Route path="updates" element={<Updates />} />
+          <Route path="updates/:id" element={<UpdateDetail />} />
+          <Route path="updates/archive" element={<Archive />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="saved" element={<SavedGuidance />} />
         </Route>
