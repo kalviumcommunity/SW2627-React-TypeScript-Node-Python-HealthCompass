@@ -1,54 +1,590 @@
-import { useState, useEffect } from 'react';
-import { Search, Bookmark, Filter, ExternalLink } from 'lucide-react';
-import { getGuidance, searchGuidance, ApiError } from '../api/client';
-import type { GuidanceItem } from '../api/client';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
-import { SearchInput } from '../components/ui/SearchInput';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Search,
+  Bookmark,
+  Upload,
+  FileText,
+  X,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  MapPin,
+  ChevronDown,
+  RefreshCw,
+  Eye,
+  MessageSquare,
+  BookOpen,
+  Plus,
+  Archive,
+} from 'lucide-react';
 
-function GuidanceLibrary() {
-  const [guidance, setGuidance] = useState<GuidanceItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+// ─── Types ───────────────────────────────────────────────────────
+
+interface GuidanceDocument {
+  id: string;
+  title: string;
+  description: string;
+  filename: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  category: string;
+  region: string;
+  authority: string;
+  version: string;
+  effective_date: string;
+  status: string;
+  chunk_count: number;
+  page_count: number;
+  tags: string[];
+  file_hash: string;
+  embedding_provider: string;
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const CATEGORY_OPTIONS = [
+  'Outbreak',
+  'Vaccination',
+  'PPE & Infection Control',
+  'Emergency',
+  'Surveillance',
+  'General',
+];
+
+const REGION_OPTIONS = [
+  'National',
+  'District A',
+  'District B',
+  'North Sector',
+  'South Sector',
+];
+
+// ─── Upload Modal ────────────────────────────────────────────────
+
+function UploadModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('General');
+  const [description, setDescription] = useState('');
+  const [region, setRegion] = useState('National');
+  const [authority, setAuthority] = useState('National Public Health Authority');
+  const [version, setVersion] = useState('1.0');
+  const [effectiveDate, setEffectiveDate] = useState('');
+  const [tags, setTags] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    loadGuidance();
-  }, []);
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
 
-  const loadGuidance = async () => {
-    try {
-      const data = await getGuidance();
-      setGuidance(data);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Failed to load guidance');
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      setFile(selected);
+      if (!title) {
+        setTitle(selected.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
       }
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      loadGuidance();
-      return;
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file || !title.trim()) return;
+
+    setUploading(true);
+    setUploadError(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title.trim());
+    formData.append('category', category);
+    formData.append('description', description.trim());
+    formData.append('region', region);
+    formData.append('authority', authority.trim());
+    formData.append('version', version.trim());
+    formData.append('effective_date', effectiveDate);
+    formData.append('tags', tags.trim());
 
     try {
-      const data = await searchGuidance(searchQuery);
-      setGuidance(data);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Search failed');
+      const res = await fetch(`${API_URL}/api/guidance/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(body.detail || 'Upload failed');
       }
+
+      const result = await res.json();
+      setUploadSuccess(result.message || 'Document uploaded and indexed successfully.');
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+      }, 1500);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to upload document');
+    } finally {
+      setUploading(false);
     }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[85vh] flex flex-col animate-slide-up"
+        role="dialog"
+        aria-label="Upload Guidance Document"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Upload className="h-4.5 w-4.5 text-primary-600" />
+            <h3 className="text-sm font-semibold text-navy-900">Add Guidance Document</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* File Drop */}
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+              file
+                ? 'border-primary-300 bg-primary-50/30'
+                : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50'
+            }`}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,.md,.html,.htm"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            {file ? (
+              <div className="flex items-center justify-center gap-2">
+                <FileText className="h-5 w-5 text-primary-600" />
+                <span className="text-sm font-medium text-navy-900">{file.name}</span>
+                <span className="text-xs text-gray-400">
+                  ({(file.size / 1024).toFixed(1)} KB)
+                </span>
+              </div>
+            ) : (
+              <>
+                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600 mb-1">
+                  Click to upload or drag and drop
+                </p>
+                <p className="text-xs text-gray-400">
+                  PDF, TXT, MD, HTML (max 25 MB)
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Document Title *
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Nipah Virus Outbreak Response Protocol"
+              className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+
+          {/* Category + Region */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Category *</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white"
+              >
+                {CATEGORY_OPTIONS.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Region</label>
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white"
+              >
+                {REGION_OPTIONS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of this guidance document..."
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none resize-none"
+            />
+          </div>
+
+          {/* Authority + Version + Date */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Authority</label>
+              <input
+                type="text"
+                value={authority}
+                onChange={(e) => setAuthority(e.target.value)}
+                placeholder="Issuing authority"
+                className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Version</label>
+              <input
+                type="text"
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="1.0"
+                className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Effective Date</label>
+              <input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Tags (comma-separated)</label>
+            <input
+              type="text"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="e.g. Outbreak, PPE, Isolation"
+              className="w-full px-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+            />
+          </div>
+
+          {/* Error */}
+          {uploadError && (
+            <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-orange-700">{uploadError}</p>
+            </div>
+          )}
+
+          {/* Success */}
+          {uploadSuccess && (
+            <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-green-700">{uploadSuccess}</p>
+            </div>
+          )}
+        </form>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+          <p className="text-[11px] text-gray-400">
+            Documents are automatically chunked, embedded, and indexed into the knowledge base.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit as any}
+              disabled={uploading || !file || !title.trim()}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-button hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Indexing...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Upload & Index
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Document Detail Modal ───────────────────────────────────────
+
+function DocumentDetailModal({
+  doc,
+  onClose,
+  onAsk,
+  onViewFile,
+  onReindex,
+  onArchive,
+}: {
+  doc: GuidanceDocument;
+  onClose: () => void;
+  onAsk: (title: string) => void;
+  onViewFile: (id: string) => void;
+  onReindex: (id: string) => void;
+  onArchive: (id: string) => void;
+}) {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  const statusColors: Record<string, string> = {
+    active: 'bg-green-100 text-green-700',
+    indexed: 'bg-green-100 text-green-700',
+    processing: 'bg-amber-100 text-amber-700',
+    failed: 'bg-red-100 text-red-700',
+    archived: 'bg-gray-100 text-gray-600',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col animate-slide-up"
+        role="dialog"
+        aria-label="Document Details"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <BookOpen className="h-4.5 w-4.5 text-primary-600 flex-shrink-0" />
+            <h3 className="text-sm font-semibold text-navy-900 truncate">{doc.title}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Status Badge */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wide ${statusColors[doc.status] || statusColors.active}`}>
+              {doc.status}
+            </span>
+            <span className="text-xs text-gray-400">v{doc.version}</span>
+            <span className="text-xs text-gray-400">•</span>
+            <span className="text-xs text-gray-400">{doc.category}</span>
+          </div>
+
+          {/* Description */}
+          {doc.description && (
+            <p className="text-sm text-gray-600 leading-relaxed">{doc.description}</p>
+          )}
+
+          {/* Error */}
+          {doc.error_message && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-700">{doc.error_message}</p>
+            </div>
+          )}
+
+          {/* Metadata Grid */}
+          <div className="bg-gray-50 rounded-card p-4 grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Authority</p>
+              <p className="text-xs text-gray-700 font-medium">{doc.authority}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Region</p>
+              <p className="text-xs text-gray-700 font-medium">{doc.region}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Effective Date</p>
+              <p className="text-xs text-gray-700 font-medium">{doc.effective_date || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">File</p>
+              <p className="text-xs text-gray-700 font-medium truncate">{doc.filename}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Indexed Chunks</p>
+              <p className="text-xs text-gray-700 font-medium">{doc.chunk_count}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Pages</p>
+              <p className="text-xs text-gray-700 font-medium">{doc.page_count}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">Embedding</p>
+              <p className="text-xs text-gray-700 font-medium capitalize">{doc.embedding_provider}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 mb-0.5">File Size</p>
+              <p className="text-xs text-gray-700 font-medium">{(doc.file_size / 1024).toFixed(1)} KB</p>
+            </div>
+          </div>
+
+          {/* Tags */}
+          {doc.tags.length > 0 && (
+            <div>
+              <p className="text-[11px] text-gray-400 mb-1.5">Tags</p>
+              <div className="flex flex-wrap gap-1.5">
+                {doc.tags.map((tag) => (
+                  <span key={tag} className="text-[11px] px-2 py-0.5 bg-primary-50 text-primary-700 rounded">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onAsk(doc.title)}
+              className="px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-button hover:bg-primary-100 transition-colors flex items-center gap-1.5"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Ask About This
+            </button>
+            <button
+              onClick={() => onViewFile(doc.id)}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              View File
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onReindex(doc.id)}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+              title="Re-index this document"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-index
+            </button>
+            {doc.status !== 'archived' && (
+              <button
+                onClick={() => onArchive(doc.id)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+                title="Archive this document"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── GuidanceLibrary Page ────────────────────────────────────────
+
+function GuidanceLibrary() {
+  const navigate = useNavigate();
+  const [documents, setDocuments] = useState<GuidanceDocument[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<GuidanceDocument | null>(null);
+  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  const [_actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const loadDocuments = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (categoryFilter !== 'all') params.set('category', categoryFilter);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+
+      const queryString = params.toString();
+      const res = await fetch(`${API_URL}/api/guidance${queryString ? `?${queryString}` : ''}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data: GuidanceDocument[] = await res.json();
+      setDocuments(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load guidance');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, categoryFilter, statusFilter]);
+
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
+
+  const handleSearch = () => {
+    loadDocuments();
+  };
+
+  const handleReset = () => {
+    setSearchQuery('');
+    setCategoryFilter('all');
+    setStatusFilter('all');
   };
 
   const toggleSave = (id: string) => {
@@ -61,93 +597,314 @@ function GuidanceLibrary() {
     setSavedItems(newSaved);
   };
 
+  const handleAsk = (title: string) => {
+    navigate('/ask', { state: { question: title } });
+  };
+
+  const handleViewFile = (docId: string) => {
+    window.open(`${API_URL}/api/guidance/${docId}/file`, '_blank');
+  };
+
+  const handleReindex = async (docId: string) => {
+    setActionLoading(docId);
+    try {
+      const res = await fetch(`${API_URL}/api/guidance/${docId}/reindex`, { method: 'POST' });
+      if (!res.ok) throw new Error('Re-index failed');
+      loadDocuments();
+      setSelectedDoc(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleArchive = async (docId: string) => {
+    setActionLoading(docId);
+    try {
+      const res = await fetch(`${API_URL}/api/guidance/${docId}/archive`, { method: 'POST' });
+      if (!res.ok) throw new Error('Archive failed');
+      loadDocuments();
+      setSelectedDoc(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const statusColors: Record<string, string> = {
+    active: 'bg-green-100 text-green-700',
+    indexed: 'bg-green-100 text-green-700',
+    processing: 'bg-amber-100 text-amber-700',
+    failed: 'bg-red-100 text-red-700',
+    archived: 'bg-gray-100 text-gray-600',
+  };
+
+  const categoryColors: Record<string, string> = {
+    outbreak: 'bg-red-50 text-red-600',
+    vaccination: 'bg-blue-50 text-blue-600',
+    'ppe & infection control': 'bg-amber-50 text-amber-600',
+    emergency: 'bg-orange-50 text-orange-600',
+    surveillance: 'bg-indigo-50 text-indigo-600',
+    general: 'bg-gray-50 text-gray-600',
+  };
+
   return (
-    <div className="p-6">
+    <div className="max-w-dashboard mx-auto px-6 py-6 lg:px-8 animate-fade-in">
       {/* Page Header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900 mb-1">Guidance Library</h1>
-        <p className="text-sm text-gray-500">Official health guidelines, vaccination protocols, and advisories.</p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-900 mb-0.5">Guidance Library</h1>
+          <p className="text-sm text-gray-500">
+            Official health guidelines, vaccination protocols, and clinical advisories.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowUploadModal(true)}
+          className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-button hover:bg-primary-700 transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          <Plus className="h-4 w-4" />
+          Add Guidance
+        </button>
       </div>
 
       {/* Toolbar */}
-      <Card className="p-4 mb-6">
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <SearchInput
+      <div className="bg-white border border-gray-200 rounded-card shadow-card p-4 mb-6">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
               placeholder="Search guidelines, topics, or circular keywords..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-button text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow"
             />
           </div>
-          <Button variant="secondary" onClick={handleSearch}>
-            <Search className="h-4 w-4 mr-2" />
-            Search
-          </Button>
-          <Button variant="ghost">
-            <Filter className="h-4 w-4 mr-2" />
-            Filters
-          </Button>
-          <Button variant="ghost" onClick={loadGuidance}>
-            Reset
-          </Button>
-        </div>
-      </Card>
 
-      {/* Error State */}
+          {/* Category Filter */}
+          <div className="relative">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-button text-sm text-gray-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white"
+            >
+              <option value="all">All Categories</option>
+              {CATEGORY_OPTIONS.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* Status Filter */}
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-button text-sm text-gray-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="indexed">Indexed</option>
+              <option value="processing">Processing</option>
+              <option value="failed">Failed</option>
+              <option value="archived">Archived</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* Reset */}
+          <button
+            onClick={handleReset}
+            className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-button transition-colors"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      {/* Error */}
       {error && (
-        <Card className="p-4 mb-6 border-l-4 border-l-orange-400 bg-orange-50">
-          <p className="text-sm text-orange-700">{error}</p>
-        </Card>
+        <div className="bg-orange-50 border border-orange-200 rounded-card p-4 mb-6 border-l-4 border-l-orange-400">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-orange-700">{error}</p>
+              <button
+                onClick={loadDocuments}
+                className="text-xs text-orange-600 hover:text-orange-800 font-medium mt-1 flex items-center gap-1"
+              >
+                <RefreshCw className="h-3 w-3" /> Retry
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading */}
       {loading && (
-        <div className="text-center py-12">
-          <p className="text-sm text-gray-500">Loading guidance...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-card p-4 shadow-card animate-pulse">
+              <div className="h-4 w-16 bg-gray-200 rounded mb-3" />
+              <div className="h-3 w-24 bg-gray-100 rounded mb-2" />
+              <div className="h-5 w-48 bg-gray-200 rounded mb-2" />
+              <div className="h-3 w-36 bg-gray-100 rounded mb-3" />
+              <div className="h-3 w-full bg-gray-50 rounded mb-2" />
+              <div className="h-3 w-4/5 bg-gray-50 rounded" />
+            </div>
+          ))}
         </div>
       )}
 
       {/* Empty State */}
-      {!loading && guidance.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-sm text-gray-500">No guidance found</p>
+      {!loading && documents.length === 0 && (
+        <div className="text-center py-16">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary-50 mb-4">
+            <BookOpen className="h-6 w-6 text-primary-600" />
+          </div>
+          <h3 className="text-sm font-medium text-gray-700 mb-1">
+            No guidance documents found
+          </h3>
+          <p className="text-xs text-gray-400 mb-4 max-w-sm mx-auto">
+            {searchQuery || categoryFilter !== 'all' || statusFilter !== 'all'
+              ? 'Try adjusting your search or filters.'
+              : 'Upload your first official health guidance document to get started.'}
+          </p>
+          {!searchQuery && categoryFilter === 'all' && statusFilter === 'all' && (
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-button hover:bg-primary-700 transition-colors flex items-center gap-2 mx-auto"
+            >
+              <Upload className="h-4 w-4" />
+              Upload Document
+            </button>
+          )}
         </div>
       )}
 
-      {/* Guidance Grid */}
-      {!loading && guidance.length > 0 && (
+      {/* Document Grid */}
+      {!loading && documents.length > 0 && (
         <>
-          <p className="text-xs text-gray-500 mb-4">Showing {guidance.length} protocols</p>
-          <div className="grid grid-cols-3 gap-4">
-            {guidance.map((item) => (
-              <div key={item.id} className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <Badge variant="active">ACTIVE</Badge>
+          <p className="text-xs text-gray-500 mb-4">
+            Showing {documents.length} protocol{documents.length !== 1 ? 's' : ''}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {documents.map((doc) => (
+              <div
+                key={doc.id}
+                className="bg-white border border-gray-200 rounded-card shadow-card hover:shadow-card-hover transition-all duration-200 p-4 group cursor-pointer"
+                onClick={() => setSelectedDoc(doc)}
+              >
+                {/* Top Row */}
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${statusColors[doc.status] || statusColors.active}`}>
+                      {doc.status}
+                    </span>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${categoryColors[doc.category.toLowerCase()] || categoryColors.general}`}>
+                      {doc.category}
+                    </span>
+                  </div>
                   <button
-                    onClick={() => toggleSave(item.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSave(doc.id);
+                    }}
                     className={`p-1.5 rounded-md transition-colors ${
-                      savedItems.has(item.id)
-                        ? 'bg-teal-100 text-teal-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      savedItems.has(doc.id)
+                        ? 'bg-primary-100 text-primary-600'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
                     }`}
+                    aria-label={savedItems.has(doc.id) ? 'Unsave' : 'Save'}
                   >
-                    <Bookmark className={`h-4 w-4 ${savedItems.has(item.id) ? 'fill-current' : ''}`} />
+                    <Bookmark className={`h-3.5 w-3.5 ${savedItems.has(doc.id) ? 'fill-current' : ''}`} />
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mb-2">{item.last_updated}</p>
-                <h3 className="text-sm font-semibold text-gray-900 mb-2">{item.title}</h3>
-                <p className="text-xs text-gray-500 mb-1">{item.source}</p>
-                <p className="text-xs text-gray-400 mb-3">District A</p>
-                <p className="text-xs text-gray-600 mb-4 line-clamp-2">{item.description}</p>
-                <Button variant="ghost" className="w-full text-xs">
-                  Read Protocol
-                  <ExternalLink className="h-3 w-3 ml-2" />
-                </Button>
+
+                {/* Date & Version */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {doc.effective_date || 'N/A'}
+                  </span>
+                  <span className="text-[11px] text-gray-400">v{doc.version}</span>
+                </div>
+
+                {/* Title */}
+                <h3 className="text-sm font-semibold text-navy-900 mb-1 group-hover:text-primary-700 transition-colors leading-snug">
+                  {doc.title}
+                </h3>
+
+                {/* Authority & Region */}
+                <p className="text-xs text-gray-500 mb-0.5">{doc.authority}</p>
+                <p className="text-[11px] text-gray-400 mb-2 flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {doc.region}
+                </p>
+
+                {/* Description */}
+                <p className="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">{doc.description}</p>
+
+                {/* Tags */}
+                {doc.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {doc.tags.slice(0, 3).map((tag) => (
+                      <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
+                        {tag}
+                      </span>
+                    ))}
+                    {doc.tags.length > 3 && (
+                      <span className="text-[10px] text-gray-400">+{doc.tags.length - 3}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                    <FileText className="h-3 w-3" />
+                    {doc.chunk_count} chunks • {doc.page_count} page{doc.page_count !== 1 ? 's' : ''}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAsk(doc.title);
+                    }}
+                    className="text-[11px] font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1 transition-colors"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Ask
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </>
+      )}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <UploadModal
+          onClose={() => setShowUploadModal(false)}
+          onSuccess={loadDocuments}
+        />
+      )}
+
+      {/* Document Detail Modal */}
+      {selectedDoc && (
+        <DocumentDetailModal
+          doc={selectedDoc}
+          onClose={() => setSelectedDoc(null)}
+          onAsk={handleAsk}
+          onViewFile={handleViewFile}
+          onReindex={handleReindex}
+          onArchive={handleArchive}
+        />
       )}
     </div>
   );
