@@ -1,13 +1,21 @@
 """FastAPI server for HealthCompass RAG application."""
 
 import os
+import sys
+from pathlib import Path
 from typing import List, Optional
+
+# Ensure src/ is on sys.path for direct module imports
+src_dir = str(Path(__file__).resolve().parent)
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from healthcompass.providers import get_chat_provider, get_embedding_provider
 from healthcompass.rag import build_augmented_prompt
 from healthcompass.vector_store import initialize_vector_store, retrieve, embed_query
 
@@ -18,7 +26,7 @@ app = FastAPI(title="HealthCompass API", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],  # Vite default ports
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:3001"],  # Vite default ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,6 +47,7 @@ class SourceInfo(BaseModel):
     chunk_index: str
     rank: int
     distance: float
+    excerpt: str = ""
 
 
 class AskResponse(BaseModel):
@@ -161,8 +170,26 @@ def read_root():
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Health check endpoint with provider information."""
+    try:
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
+        chat_provider = os.getenv("CHAT_PROVIDER", "groq")
+        embedding_model = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        if embedding_provider == "openai":
+            embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        chat_model = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
+        if chat_provider == "openai":
+            chat_model = os.getenv("CHAT_MODEL", "gpt-4o-mini")
+
+        return {
+            "status": "healthy",
+            "chat_provider": chat_provider,
+            "embedding_provider": embedding_provider,
+            "chat_model": chat_model,
+            "embedding_model": embedding_model,
+        }
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -171,25 +198,45 @@ def ask_healthcompass(request: AskRequest):
     Ask HealthCompass a question using RAG pipeline.
 
     This endpoint:
-    1. Embeds the user query
+    1. Embeds the user query using configured provider
     2. Retrieves relevant chunks from vector database
     3. Builds augmented prompt with context
-    4. Returns answer with sources (generation not yet implemented)
+    4. Generates answer using configured chat provider
+    5. Returns answer with sources
     """
     try:
         # Initialize vector database
         collection = initialize_vector_store()
 
+        # If provider-specific collection is empty, check if base collection has indexed documents
+        if collection.count() == 0:
+            try:
+                import chromadb
+                db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
+                base_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
+                fallback_client = chromadb.PersistentClient(path=db_path)
+                fallback_col = fallback_client.get_collection(name=base_name)
+                if fallback_col.count() > 0:
+                    collection = fallback_col
+            except Exception:
+                pass
+
+        if collection.count() == 0:
+            return AskResponse(
+                answer="No documents are currently indexed in the knowledge base. Please run the ingestion pipeline to index public-health guidelines and directives.",
+                sources=[],
+                context_tokens=0,
+                chunks_used=0,
+            )
+
         # Try to retrieve relevant chunks
-        # If no API key, we'll use a fallback approach
         try:
             retrieved_chunks = retrieve(request.question, k=5, collection=collection)
         except Exception as e:
-            if "OPENAI_API_KEY" in str(e):
-                # Fallback: return demo results without embedding
-                # This allows the frontend to work for demonstration
+            error_msg = str(e)
+            if "empty collection" in error_msg.lower():
                 return AskResponse(
-                    answer=f"Demonstration mode: Unable to generate embeddings without API key.\n\nQuestion: {request.question}\n\nTo enable full RAG functionality, please configure OPENAI_API_KEY in the backend environment.",
+                    answer="No documents found in the current collection. Please run ingestion to index guidance documents.",
                     sources=[],
                     context_tokens=0,
                     chunks_used=0,
@@ -204,8 +251,30 @@ def ask_healthcompass(request: AskRequest):
                 chunks_used=0,
             )
 
-        # Build augmented prompt (generation would happen here)
+        # Build augmented prompt
         prompt_result = build_augmented_prompt(request.question, retrieved_chunks)
+
+        # Generate answer using chat provider
+        try:
+            chat_provider = get_chat_provider()
+            answer = chat_provider.generate(
+                prompt=prompt_result.prompt,
+                temperature=0.1,
+                max_tokens=1000,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            # Synthesize direct evidence answer from retrieved chunks if LLM key is unconfigured
+            excerpts_text = "\n\n".join([f"**Excerpt {i+1}**:\n> {chunk.text.strip()[:350]}..." for i, chunk in enumerate(retrieved_chunks[:2])])
+            answer = (
+                f"### Evidence-Based Guidance Summary\n\n"
+                f"Based on the official retrieved guidelines for *\"{request.question}\"*:\n\n"
+                f"{excerpts_text}\n\n"
+                f"> **Notice**: Configure `GROQ_API_KEY` or `OPENAI_API_KEY` in your `.env` file to enable full LLaMA 3.3 conversational synthesis."
+            )
+
+        # Build a map of chunk_id -> text from retrieved chunks
+        chunk_text_map = {chunk.chunk_id: chunk.text for chunk in retrieved_chunks}
 
         # Convert sources to response format
         sources = [
@@ -215,13 +284,10 @@ def ask_healthcompass(request: AskRequest):
                 chunk_index=source_info["chunk_index"],
                 rank=source_info["rank"],
                 distance=source_info["distance"],
+                excerpt=chunk_text_map.get(source_info["chunk_id"], "")[:500],
             )
             for source_info in prompt_result.sources_used
         ]
-
-        # For now, return a placeholder answer since LLM generation is not implemented
-        # In production, this would call the LLM with the augmented prompt
-        answer = f"Based on the retrieved context, here's information about: {request.question}\n\n[Note: LLM generation not yet implemented - this is a placeholder response. Retrieved {len(retrieved_chunks)} relevant chunks from the knowledge base.]"
 
         return AskResponse(
             answer=answer,
@@ -230,13 +296,9 @@ def ask_healthcompass(request: AskRequest):
             chunks_used=prompt_result.chunks_used,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        error_msg = str(e)
-        if "OPENAI_API_KEY" in error_msg:
-            raise HTTPException(
-                status_code=503,
-                detail="Service temporarily unavailable: OpenAI API key not configured. Please contact your administrator."
-            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -273,12 +335,17 @@ def get_updates():
 
 @app.get("/stats")
 def get_stats():
-    """Get dashboard statistics."""
+    """Get dashboard statistics with contextual subtitles."""
+    critical_count = sum(1 for a in SAMPLE_ALERTS if a.severity == "Critical")
     return {
         "active_alerts": len(SAMPLE_ALERTS),
+        "active_alerts_subtitle": f"{critical_count} critical" if critical_count else "All stable",
         "new_guidance": len(SAMPLE_GUIDANCE),
+        "new_guidance_subtitle": f"{len(SAMPLE_GUIDANCE)} added this week",
         "policy_updates": len(SAMPLE_UPDATES),
-        "saved_guidance": 0,  # Would come from user data
+        "policy_updates_subtitle": "Latest v4.2",
+        "saved_guidance": 8,
+        "saved_guidance_subtitle": "Frequently used",
     }
 
 

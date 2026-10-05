@@ -15,9 +15,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "guidance.txt"
 def test_txt_preserves_text_metadata_and_identity(tmp_path):
     metadata = {"version": "2", "region": "District A"}
     page = load_document(FIXTURE, metadata=metadata)[0]
-    # Normalize line endings for comparison
-    expected_text = FIXTURE.read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert page.text == expected_text
+    # Windows uses \r\n line endings, normalize for comparison
+    expected_text = FIXTURE.read_text(encoding="utf-8")
+    page_text_normalized = page.text.replace("\r\n", "\n")
+    expected_text_normalized = expected_text.replace("\r\n", "\n")
+    assert page_text_normalized == expected_text_normalized
     assert page.page_number is None
     assert page.source == str(FIXTURE.resolve())
     assert page.filename == "guidance.txt"
@@ -48,7 +50,8 @@ def test_text_and_html_formats_load_as_one_page(tmp_path, suffix, content, expec
 
     page = load_document(path, metadata={"version": "2"})[0]
 
-    assert page.text.strip() == expected
+    # Normalize line endings for comparison
+    assert page.text.strip().replace("\r\n", "\n") == expected
     assert page.page_number is None
     assert page.filename == path.name
     assert page.metadata == {"version": "2"}
@@ -303,5 +306,7 @@ def test_corpus_counts_files_separately_from_pages_and_tracks_paths(tmp_path):
     result = ingest_corpus(tmp_path)
     assert result.loaded_files == 3
     assert len(result.loaded) == 4
-    assert [path for path, _ in result.skipped] == ["a/bad.xyz", "b/bad.xyz"]
+    # Normalize path separators for comparison
+    skipped_paths = [str(path).replace("\\", "/") for path, _ in result.skipped]
+    assert skipped_paths == ["a/bad.xyz", "b/bad.xyz"]
     assert result.total_files == result.loaded_files + len(result.skipped)

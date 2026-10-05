@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Bookmark } from 'lucide-react';
+import { Search, Bookmark, Filter, ExternalLink } from 'lucide-react';
 import { getGuidance, searchGuidance, ApiError } from '../api/client';
 import type { GuidanceItem } from '../api/client';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import { SearchInput } from '../components/ui/SearchInput';
 
 function GuidanceLibrary() {
   const [guidance, setGuidance] = useState<GuidanceItem[]>([]);
@@ -58,89 +62,92 @@ function GuidanceLibrary() {
   };
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Guidance Library</h1>
-        <p className="text-gray-600">
-          Search and browse official public health guidance documents
-        </p>
+    <div className="p-6">
+      {/* Page Header */}
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-gray-900 mb-1">Guidance Library</h1>
+        <p className="text-sm text-gray-500">Official health guidelines, vaccination protocols, and advisories.</p>
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
+      {/* Toolbar */}
+      <Card className="p-4 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <SearchInput
+              placeholder="Search guidelines, topics, or circular keywords..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search guidance by topic, title, or description..."
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <button
-            onClick={handleSearch}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
+          <Button variant="secondary" onClick={handleSearch}>
+            <Search className="h-4 w-4 mr-2" />
             Search
-          </button>
+          </Button>
+          <Button variant="ghost">
+            <Filter className="h-4 w-4 mr-2" />
+            Filters
+          </Button>
+          <Button variant="ghost" onClick={loadGuidance}>
+            Reset
+          </Button>
         </div>
-      </div>
+      </Card>
 
-      {/* Error state */}
+      {/* Error State */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
+        <Card className="p-4 mb-6 border-l-4 border-l-orange-400 bg-orange-50">
+          <p className="text-sm text-orange-700">{error}</p>
+        </Card>
       )}
 
-      {/* Loading state */}
+      {/* Loading State */}
       {loading && (
         <div className="text-center py-12">
-          <p className="text-gray-500">Loading guidance...</p>
+          <p className="text-sm text-gray-500">Loading guidance...</p>
         </div>
       )}
 
-      {/* Guidance list */}
+      {/* Empty State */}
       {!loading && guidance.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-gray-500">No guidance found</p>
+          <p className="text-sm text-gray-500">No guidance found</p>
         </div>
       )}
 
+      {/* Guidance Grid */}
       {!loading && guidance.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {guidance.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                  {item.topic}
-                </span>
-                <button
-                  onClick={() => toggleSave(item.id)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    savedItems.has(item.id)
-                      ? 'bg-blue-100 text-blue-600'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <Bookmark className="h-4 w-4" />
-                </button>
+        <>
+          <p className="text-xs text-gray-500 mb-4">Showing {guidance.length} protocols</p>
+          <div className="grid grid-cols-3 gap-4">
+            {guidance.map((item) => (
+              <div key={item.id} className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <Badge variant="active">ACTIVE</Badge>
+                  <button
+                    onClick={() => toggleSave(item.id)}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      savedItems.has(item.id)
+                        ? 'bg-teal-100 text-teal-600'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Bookmark className={`h-4 w-4 ${savedItems.has(item.id) ? 'fill-current' : ''}`} />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mb-2">{item.last_updated}</p>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">{item.title}</h3>
+                <p className="text-xs text-gray-500 mb-1">{item.source}</p>
+                <p className="text-xs text-gray-400 mb-3">District A</p>
+                <p className="text-xs text-gray-600 mb-4 line-clamp-2">{item.description}</p>
+                <Button variant="ghost" className="w-full text-xs">
+                  Read Protocol
+                  <ExternalLink className="h-3 w-3 ml-2" />
+                </Button>
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
-              <p className="text-sm text-gray-600 mb-4">{item.description}</p>
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>{item.source}</span>
-                <span>Updated {item.last_updated}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
