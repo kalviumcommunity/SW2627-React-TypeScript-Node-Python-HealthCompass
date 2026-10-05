@@ -36,6 +36,16 @@ class VectorRecord:
 
 
 @dataclass
+class BatchUpsertResult:
+    """Outcome of a batched vector-record upsert."""
+
+    expected_count: int
+    upserted_count: int
+    indexed_count: int
+    failures: List[Dict[str, str]]
+
+
+@dataclass
 class RetrievalResult:
     """A result from similarity search retrieval."""
 
@@ -126,16 +136,25 @@ def initialize_vector_store(
         try:
             collection = client.get_collection(name=config.collection_name)
             print(f"Loaded existing collection: {config.collection_name}")
-        except:
+        except (chromadb.errors.NotFoundError, chromadb.errors.InvalidCollectionException):
             collection = client.create_collection(
                 name=config.collection_name,
                 metadata={
+                    "embedding_dimension": config.embedding_dimension,
                     "hnsw:space": "cosine",
                     "hnsw:construction_ef": 200,
                     "hnsw:M": 16,
                 },
             )
             print(f"Created new collection: {config.collection_name}")
+
+        collection_metadata = collection.metadata or {}
+        stored_dimension = collection_metadata.get("embedding_dimension")
+        if stored_dimension is not None and stored_dimension != config.embedding_dimension:
+            raise VectorStoreError(
+                f"Collection dimension mismatch: expected {config.embedding_dimension}, "
+                f"found {stored_dimension}. Consider recreating the collection."
+            )
 
         # Verify collection dimension matches expected
         if collection.count() > 0:
@@ -149,6 +168,14 @@ def initialize_vector_store(
                         f"found {actual_dimension}. Consider recreating the collection."
                     )
 
+        if stored_dimension is None:
+            collection.modify(
+                metadata={
+                    **collection_metadata,
+                    "embedding_dimension": config.embedding_dimension,
+                }
+            )
+
         print(f"Vector database initialized at: {config.db_path}")
         print(f"Collection: {config.collection_name}")
         print(f"Embedding dimension: {config.embedding_dimension}")
@@ -157,7 +184,7 @@ def initialize_vector_store(
         return collection
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to initialize vector store: {e}")
+        raise VectorStoreError(f"Failed to initialize vector store: {e}") from e
 
 
 def insert_record(
@@ -177,15 +204,18 @@ def insert_record(
         VectorStoreError: If insertion fails
     """
     try:
-        # Validate vector dimension
-        collection_data = collection.get(limit=1, include=["embeddings"])
-        if len(collection_data["embeddings"]) > 0:
-            expected_dimension = len(collection_data["embeddings"][0])
-            if len(record.embedding) != expected_dimension:
-                raise VectorStoreError(
-                    f"Vector dimension mismatch: expected {expected_dimension}, "
-                    f"got {len(record.embedding)}"
-                )
+        # Validate against the configured dimension, including on an empty collection.
+        expected_dimension = (collection.metadata or {}).get("embedding_dimension")
+        if expected_dimension is None:
+            collection_data = collection.get(limit=1, include=["embeddings"])
+            if len(collection_data["embeddings"]) > 0:
+                expected_dimension = len(collection_data["embeddings"][0])
+
+        if expected_dimension is not None and len(record.embedding) != expected_dimension:
+            raise VectorStoreError(
+                f"Vector dimension mismatch: expected {expected_dimension}, "
+                f"got {len(record.embedding)}"
+            )
 
         # ChromaDB requires non-empty metadata, so provide a default if empty
         metadata = record.metadata if record.metadata else {"default": "true"}
@@ -201,7 +231,62 @@ def insert_record(
         return record.id
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to insert record: {e}")
+        raise VectorStoreError(f"Failed to insert record: {e}") from e
+
+
+def upsert_records(
+    collection: chromadb.Collection,
+    records: List[VectorRecord],
+    batch_size: int = 100,
+) -> BatchUpsertResult:
+    """Upsert vector records in batches and report indexing integrity details.
+
+    Existing IDs are replaced, so repeating an indexing run does not create
+    duplicate records. Failed batches are reported while later batches continue.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size must be greater than 0")
+
+    expected_dimension = (collection.metadata or {}).get("embedding_dimension")
+    if expected_dimension is None:
+        collection_data = collection.get(limit=1, include=["embeddings"])
+        if len(collection_data["embeddings"]) > 0:
+            expected_dimension = len(collection_data["embeddings"][0])
+
+    expected_count = len(records)
+    upserted_count = 0
+    failures = []
+
+    for start in range(0, expected_count, batch_size):
+        batch = records[start : start + batch_size]
+        try:
+            for record in batch:
+                if expected_dimension is not None and len(record.embedding) != expected_dimension:
+                    raise VectorStoreError(
+                        f"Vector dimension mismatch: expected {expected_dimension}, "
+                        f"got {len(record.embedding)}"
+                    )
+
+            collection.upsert(
+                ids=[record.id for record in batch],
+                embeddings=[record.embedding for record in batch],
+                documents=[record.text for record in batch],
+                metadatas=[
+                    {key: value for key, value in record.metadata.items() if value is not None}
+                    or {"default": "true"}
+                    for record in batch
+                ],
+            )
+            upserted_count += len(batch)
+        except Exception as error:
+            failures.append({"batch_start_id": batch[0].id, "error": str(error)})
+
+    return BatchUpsertResult(
+        expected_count=expected_count,
+        upserted_count=upserted_count,
+        indexed_count=collection.count(),
+        failures=failures,
+    )
 
 
 def get_record(
@@ -234,7 +319,7 @@ def get_record(
         )
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to retrieve record: {e}")
+        raise VectorStoreError(f"Failed to retrieve record: {e}") from e
 
 
 def health_check(config: Optional[VectorStoreConfig] = None, verbose: bool = True) -> bool:
@@ -287,7 +372,7 @@ def get_collection_info(collection: chromadb.Collection) -> Dict[str, Any]:
             "metadata": collection.metadata,
         }
     except Exception as e:
-        raise VectorStoreError(f"Failed to get collection info: {e}")
+        raise VectorStoreError(f"Failed to get collection info: {e}") from e
 
 
 def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
@@ -304,10 +389,15 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
         VectorStoreError: If embedding generation fails
     """
     try:
-        provider = get_embedding_provider()
-        return provider.embed_query(query)
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        response = client.embeddings.create(input=[query], model=embedding_model)
+        return response.data[0].embedding
+    except openai.RateLimitError as e:
+        raise VectorStoreError(f"Rate limit error during query embedding: {e}") from e
+    except openai.APIError as e:
+        raise VectorStoreError(f"API error during query embedding: {e}") from e
     except Exception as e:
-        raise VectorStoreError(f"Failed to embed query: {e}")
+        raise VectorStoreError(f"Failed to embed query: {e}") from e
 
 
 def retrieve(
@@ -365,4 +455,4 @@ def retrieve(
     except VectorStoreError:
         raise
     except Exception as e:
-        raise VectorStoreError(f"Failed to retrieve results: {e}")
+        raise VectorStoreError(f"Failed to retrieve results: {e}") from e

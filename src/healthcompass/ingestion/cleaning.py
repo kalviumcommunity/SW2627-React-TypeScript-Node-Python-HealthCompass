@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .loader import DocumentPage
 
-CLEANING_VERSION = "2"
+CLEANING_VERSION = "3"
 _HORIZONTAL_SPACE = re.compile(r"[^\S\n]+")
 _CONTROL_NOISE = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
 _PAGE_FOOTER = re.compile(r"Page\s+\d+\s+of\s+\d+", re.IGNORECASE)
@@ -24,7 +24,9 @@ class CleanedPage(DocumentPage):
 
 
 def _normalize(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text).lstrip("\ufeff")
+    # NFC repairs canonical Unicode variants without changing meaningful
+    # compatibility characters used in health guidance (for example, m²).
+    text = unicodedata.normalize("NFC", text).lstrip("\ufeff")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u2028", "\n").replace("\u2029", "\n\n").replace("\f", "\n\n")
     # Replace noise with a separator so adjacent words/numbers do not concatenate.

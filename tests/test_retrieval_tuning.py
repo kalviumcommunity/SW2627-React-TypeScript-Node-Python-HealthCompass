@@ -4,7 +4,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -253,8 +253,15 @@ def test_select_best_configuration_top_1_tiebreaker():
 def test_evaluate_retrieval_configurations_with_mock():
     """Test that retrieval configuration evaluation works with mock results."""
     queries = [
-        Mock(query="Test query", expected_source="test.txt", expected_keyword="test", explanation=""),
-        Mock(query="Another query", expected_source="test.txt", expected_keyword="another", explanation=""),
+        Mock(
+            query="Test query", expected_source="test.txt", expected_keyword="test", explanation=""
+        ),
+        Mock(
+            query="Another query",
+            expected_source="test.txt",
+            expected_keyword="another",
+            explanation="",
+        ),
     ]
 
     configs = [
@@ -264,7 +271,9 @@ def test_evaluate_retrieval_configurations_with_mock():
 
     mock_collection = Mock()
 
-    evaluations = evaluate_retrieval_configurations(queries, configs, mock_collection, use_mock=True)
+    evaluations = evaluate_retrieval_configurations(
+        queries, configs, mock_collection, use_mock=True
+    )
 
     assert len(evaluations) == 2
     assert evaluations[0].config_name == "Config A"
@@ -418,8 +427,8 @@ def test_results_aggregation():
         total_queries=3,
         top_1_hits=1,
         top_k_hits=2,
-        top_1_hit_rate=1/3,
-        top_k_hit_rate=2/3,
+        top_1_hit_rate=1 / 3,
+        top_k_hit_rate=2 / 3,
         average_rank=1.5,
         queries_with_zero_relevant=1,
         results=results,

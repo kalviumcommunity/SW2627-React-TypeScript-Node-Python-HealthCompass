@@ -2010,11 +2010,7 @@ from healthcompass.vector_store import retrieve, initialize_vector_store, embed_
 collection = initialize_vector_store()
 
 # Retrieve top 3 most similar chunks
-results = retrieve(
-    query="How can a learner reset their password?",
-    collection=collection,
-    k=3
-)
+results = retrieve(query="How can a learner reset their password?", collection=collection, k=3)
 
 # Display results
 for result in results:

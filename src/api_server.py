@@ -1,8 +1,5 @@
 """FastAPI server for HealthCompass RAG application."""
 
-import os
-import sys
-from pathlib import Path
 from typing import List, Optional
 
 # Ensure src/ is on sys.path for direct module imports
@@ -17,7 +14,7 @@ from pydantic import BaseModel
 
 from healthcompass.providers import get_chat_provider, get_embedding_provider
 from healthcompass.rag import build_augmented_prompt
-from healthcompass.vector_store import initialize_vector_store, retrieve, embed_query
+from healthcompass.vector_store import initialize_vector_store, retrieve
 
 load_dotenv()
 
@@ -26,7 +23,11 @@ app = FastAPI(title="HealthCompass API", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:3001"],  # Vite default ports
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+    ],  # Vite default ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -299,7 +300,13 @@ def ask_healthcompass(request: AskRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "OPENAI_API_KEY" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Service temporarily unavailable: OpenAI API key not configured. Please contact your administrator.",
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/guidance", response_model=List[GuidanceItem])

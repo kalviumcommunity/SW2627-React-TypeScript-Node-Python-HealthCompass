@@ -7,7 +7,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from healthcompass.ingestion import EmbeddedChunk, index_embedded_chunks, to_vector_record
 from healthcompass.vector_store import (
+    BatchUpsertResult,
     RetrievalResult,
     VectorRecord,
     VectorStoreConfig,
@@ -20,6 +22,7 @@ from healthcompass.vector_store import (
     initialize_vector_store,
     insert_record,
     retrieve,
+    upsert_records,
 )
 
 
@@ -33,9 +36,10 @@ def temp_db_path():
     try:
         import shutil
         import time
+
         time.sleep(0.5)  # Give ChromaDB time to release file handles
         shutil.rmtree(temp_dir, ignore_errors=True)
-    except:
+    except OSError:
         pass  # Cleanup errors are acceptable
 
 
@@ -153,13 +157,15 @@ def test_initialize_vector_store_loads_existing_collection(test_config):
     assert collection2.count() == 1
 
 
-@pytest.mark.skip(reason="ChromaDB creates directory during initialization, not testable separately")
+@pytest.mark.skip(
+    reason="ChromaDB creates directory during initialization, not testable separately"
+)
 def test_initialize_vector_store_creates_directory(test_config):
     """Test that initialization creates the database directory."""
     db_dir = Path(test_config.db_path)
     assert not db_dir.exists()
 
-    collection = initialize_vector_store(test_config)
+    initialize_vector_store(test_config)
     assert db_dir.exists()
     assert db_dir.is_dir()
 
@@ -217,6 +223,22 @@ def test_insert_record_dimension_mismatch(test_config, test_record):
 
     with pytest.raises(VectorStoreError, match="Vector dimension mismatch"):
         insert_record(collection, bad_record)
+
+
+def test_insert_record_dimension_mismatch_on_empty_collection(test_config):
+    """Test that an empty collection rejects a vector with the wrong dimension."""
+    collection = initialize_vector_store(test_config)
+    bad_record = VectorRecord(
+        id="bad_record",
+        embedding=[0.1] * (test_config.embedding_dimension - 1),
+        text="test",
+        metadata={"source": "test.txt"},
+    )
+
+    with pytest.raises(VectorStoreError, match="Vector dimension mismatch"):
+        insert_record(collection, bad_record)
+
+    assert collection.count() == 0
 
 
 def test_get_record(test_config, test_record):
@@ -278,11 +300,13 @@ def test_existing_records_not_deleted(test_config, test_record):
 
 def test_health_check_success(test_config):
     """Test that health check returns True for healthy database."""
-    collection = initialize_vector_store(test_config)
+    initialize_vector_store(test_config)
     assert health_check(test_config, verbose=False) is True
 
 
-@pytest.mark.skip(reason="ChromaDB creates directories automatically, making invalid path test unreliable")
+@pytest.mark.skip(
+    reason="ChromaDB creates directories automatically, making invalid path test unreliable"
+)
 def test_health_check_invalid_path():
     """Test that health check returns False for invalid path."""
     bad_config = VectorStoreConfig(
@@ -356,6 +380,104 @@ def test_multiple_records(test_config):
         assert retrieved.text == record.text
 
 
+def test_upsert_records_batches_and_preserves_record_data(test_config):
+    """Batch indexing preserves vector data and is safe to repeat."""
+    collection = initialize_vector_store(test_config)
+    records = [
+        VectorRecord(
+            id=f"indexed_{index}",
+            embedding=[0.1] * test_config.embedding_dimension,
+            text=f"Indexed guidance {index}",
+            metadata={"source": "guidance.txt", "chunk_index": index, "section": None},
+        )
+        for index in range(3)
+    ]
+
+    result = upsert_records(collection, records, batch_size=2)
+
+    assert isinstance(result, BatchUpsertResult)
+    assert result.expected_count == 3
+    assert result.upserted_count == 3
+    assert result.indexed_count == 3
+    assert result.failures == []
+    for record in records:
+        stored = get_record(collection, record.id)
+        assert stored is not None
+        assert list(stored.embedding) == pytest.approx(record.embedding)
+        assert stored.text == record.text
+        assert stored.metadata == {
+            "source": "guidance.txt",
+            "chunk_index": record.metadata["chunk_index"],
+        }
+
+    repeated = upsert_records(collection, records, batch_size=2)
+    assert repeated.upserted_count == 3
+    assert repeated.indexed_count == 3
+
+
+def test_upsert_records_reports_failed_batch_and_continues(test_config):
+    """A bad vector fails its batch but does not prevent later batches."""
+    collection = initialize_vector_store(test_config)
+    records = [
+        VectorRecord("bad", [0.1], "bad vector", {"source": "test.txt"}),
+        VectorRecord(
+            "good",
+            [0.1] * test_config.embedding_dimension,
+            "valid vector",
+            {"source": "test.txt"},
+        ),
+    ]
+
+    result = upsert_records(collection, records, batch_size=1)
+
+    assert result.expected_count == 2
+    assert result.upserted_count == 1
+    assert result.indexed_count == 1
+    assert result.failures[0]["batch_start_id"] == "bad"
+    assert "dimension mismatch" in result.failures[0]["error"]
+    assert get_record(collection, "good") is not None
+
+
+def test_upsert_records_requires_positive_batch_size(test_config):
+    collection = initialize_vector_store(test_config)
+
+    with pytest.raises(ValueError, match="batch_size must be greater than 0"):
+        upsert_records(collection, [], batch_size=0)
+
+
+def test_index_embedded_chunks_uses_stable_ids_and_preserves_metadata(test_config):
+    """Embedded chunks are indexed with their source and metadata attached."""
+    collection = initialize_vector_store(test_config)
+    chunks = [
+        EmbeddedChunk(
+            text="Vaccination guidance",
+            source="guidance.txt",
+            filename="guidance.txt",
+            chunk_id=0,
+            metadata={"section": "Overview", "chunk_index": 0},
+            embedding=[0.1] * test_config.embedding_dimension,
+            embedding_model="text-embedding-3-small",
+        )
+    ]
+
+    record = to_vector_record(chunks[0])
+    result = index_embedded_chunks(collection, chunks, batch_size=1)
+
+    assert result.expected_count == result.upserted_count == result.indexed_count == 1
+    assert result.failures == []
+    stored = get_record(collection, record.id)
+    assert stored is not None
+    assert stored.text == chunks[0].text
+    assert stored.metadata == {
+        "section": "Overview",
+        "chunk_index": 0,
+        "source": "guidance.txt",
+        "filename": "guidance.txt",
+        "chunk_id": "0",
+    }
+    assert list(stored.embedding) == pytest.approx(chunks[0].embedding)
+
+
 def test_metadata_preservation(test_config):
     """Test that metadata fields are preserved correctly."""
     collection = initialize_vector_store(test_config)
@@ -418,10 +540,31 @@ def test_invalid_vector_dimensions_handled(test_config):
 # Retrieval Tests
 
 
-def test_embed_query_missing_provider():
-    """Test that missing provider configuration raises clear error."""
-    with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=True):
-        with pytest.raises(VectorStoreError, match="OPENAI_API_KEY is required"):
+def test_embed_query_uses_configured_model():
+    """Test that query embedding uses the configured embedding model."""
+    with patch("healthcompass.vector_store.chroma_store.openai.OpenAI") as mock_openai:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]
+        mock_client.embeddings.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+
+        with patch.dict(
+            os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}
+        ):
+            result = embed_query("test query")
+            assert len(result) == 3
+            mock_client.embeddings.create.assert_called_once()
+            call_args = mock_client.embeddings.create.call_args
+            assert call_args[1]["model"] == "text-embedding-3-small"
+
+
+def test_embed_query_missing_api_key():
+    """Test that missing API key raises clear error."""
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(
+            VectorStoreError, match="OPENAI_API_KEY environment variable is not set"
+        ):
             embed_query("test query")
             assert call_args[1]["model"] == "text-embedding-3-large"
 

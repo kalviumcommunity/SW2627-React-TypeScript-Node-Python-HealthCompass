@@ -67,7 +67,9 @@ def main():
     print(f"Top-1 hit rate: {best_config.top_1_hit_rate:.1%}")
     print(f"Top-k hit rate: {best_config.top_k_hit_rate:.1%}")
     print()
-    print(f"Reason: Selected based on highest top-k hit rate ({best_config.top_k_hit_rate:.1%}) and top-1 hit rate ({best_config.top_1_hit_rate:.1%}).")
+    print(
+        f"Reason: Selected based on highest top-k hit rate ({best_config.top_k_hit_rate:.1%}) and top-1 hit rate ({best_config.top_1_hit_rate:.1%})."
+    )
     print()
 
     print("=" * 80)

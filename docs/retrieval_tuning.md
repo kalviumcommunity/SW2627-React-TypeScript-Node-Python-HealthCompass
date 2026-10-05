@@ -241,7 +241,7 @@ collection = initialize_vector_store()
 results = retrieve(
     query="User question",
     collection=collection,
-    k=3  # Best configuration from tuning experiment
+    k=3,  # Best configuration from tuning experiment
 )
 ```
 

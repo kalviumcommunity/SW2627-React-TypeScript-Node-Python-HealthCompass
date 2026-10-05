@@ -80,9 +80,9 @@ Use `tag_chunks` when an index expects a uniform text-plus-metadata record:
 from healthcompass.ingestion import tag_chunks
 
 records = tag_chunks(
-  "refund-policy.pdf",
-  [("Refunds are available within 30 days.", 120)],
-  metadata={"section": "Eligibility", "page": 3, "effective_date": "2026-01-01"},
+    "refund-policy.pdf",
+    [("Refunds are available within 30 days.", 120)],
+    metadata={"section": "Eligibility", "page": 3, "effective_date": "2026-01-01"},
 )
 ```
 

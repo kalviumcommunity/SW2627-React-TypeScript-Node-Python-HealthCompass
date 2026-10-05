@@ -78,9 +78,7 @@ def load_labelled_queries(path: Path) -> List[QueryLabel]:
     ]
 
 
-def calculate_recall_at_k(
-    retrieved_ids: List[str], relevant_ids: List[str]
-) -> float:
+def calculate_recall_at_k(retrieved_ids: List[str], relevant_ids: List[str]) -> float:
     """Calculate Recall@k.
 
     Recall@k = number of relevant chunks retrieved / total number of relevant chunks
@@ -92,9 +90,7 @@ def calculate_recall_at_k(
     return relevant_retrieved / len(relevant_ids)
 
 
-def calculate_precision_at_k(
-    retrieved_ids: List[str], relevant_ids: List[str]
-) -> float:
+def calculate_precision_at_k(retrieved_ids: List[str], relevant_ids: List[str]) -> float:
     """Calculate Precision@k.
 
     Precision@k = number of relevant chunks retrieved / total chunks retrieved
@@ -106,9 +102,7 @@ def calculate_precision_at_k(
     return relevant_retrieved / len(retrieved_ids)
 
 
-def evaluate_query(
-    query_label: QueryLabel, k: int, collection
-) -> QueryEvaluationResult:
+def evaluate_query(query_label: QueryLabel, k: int, collection) -> QueryEvaluationResult:
     """Evaluate a single query with Recall@k and Precision@k.
 
     Args:
@@ -142,9 +136,7 @@ def evaluate_query(
 
     # Calculate metrics
     recall_at_k = calculate_recall_at_k(retrieved_ids, query_label.relevant_chunk_ids)
-    precision_at_k = calculate_precision_at_k(
-        retrieved_ids, query_label.relevant_chunk_ids
-    )
+    precision_at_k = calculate_precision_at_k(retrieved_ids, query_label.relevant_chunk_ids)
 
     relevant_retrieved = len(set(retrieved_ids) & set(query_label.relevant_chunk_ids))
 
@@ -214,9 +206,7 @@ def evaluate_query_with_deterministic_embeddings(
 
     # Calculate metrics
     recall_at_k = calculate_recall_at_k(retrieved_ids, query_label.relevant_chunk_ids)
-    precision_at_k = calculate_precision_at_k(
-        retrieved_ids, query_label.relevant_chunk_ids
-    )
+    precision_at_k = calculate_precision_at_k(retrieved_ids, query_label.relevant_chunk_ids)
 
     relevant_retrieved = len(set(retrieved_ids) & set(query_label.relevant_chunk_ids))
 
@@ -358,9 +348,7 @@ def save_evaluation_results(
 
         f.write("## Evaluation Dataset\n\n")
         f.write(f"- Number of labelled queries: {summary.total_queries}\n")
-        f.write(
-            "- k values evaluated: 1, 3, 5\n"
-        )
+        f.write("- k values evaluated: 1, 3, 5\n")
         f.write("- Relevance labels: Created manually based on actual chunk content\n")
         f.write("- Source: vaccination_guidance.txt\n\n")
 
@@ -429,33 +417,55 @@ def save_evaluation_results(
                 # Analyze the failure based on actual data
                 if failure["total_relevant"] > 1 and failure["k"] == 1:
                     f.write("k=1 is too small for queries with multiple relevant chunks. ")
-                    f.write("The query requires multiple relevant chunks, but only 1 was retrieved.\n\n")
+                    f.write(
+                        "The query requires multiple relevant chunks, but only 1 was retrieved.\n\n"
+                    )
                 elif failure["relevant_retrieved"] == 0:
-                    f.write("Deterministic embeddings based on query hash do not reflect actual semantic similarity. ")
-                    f.write("The wrong chunk was retrieved due to hash-based embedding rather than semantic content.\n\n")
+                    f.write(
+                        "Deterministic embeddings based on query hash do not reflect actual semantic similarity. "
+                    )
+                    f.write(
+                        "The wrong chunk was retrieved due to hash-based embedding rather than semantic content.\n\n"
+                    )
                 else:
-                    f.write("Deterministic embeddings do not reflect actual semantic similarity.\n\n")
+                    f.write(
+                        "Deterministic embeddings do not reflect actual semantic similarity.\n\n"
+                    )
 
                 f.write("**Possible improvement:**\n")
 
                 if failure["total_relevant"] > 1 and failure["k"] == 1:
-                    f.write("Increase k to retrieve more chunks when queries have multiple relevant items. ")
-                    f.write("For production evaluation, use actual semantic embeddings via OPENAI_API_KEY.\n\n")
+                    f.write(
+                        "Increase k to retrieve more chunks when queries have multiple relevant items. "
+                    )
+                    f.write(
+                        "For production evaluation, use actual semantic embeddings via OPENAI_API_KEY.\n\n"
+                    )
                 elif failure["relevant_retrieved"] == 0:
-                    f.write("Use actual semantic embeddings via OPENAI_API_KEY instead of deterministic hash-based embeddings. ")
-                    f.write("This will properly capture semantic similarity between queries and chunks.\n\n")
+                    f.write(
+                        "Use actual semantic embeddings via OPENAI_API_KEY instead of deterministic hash-based embeddings. "
+                    )
+                    f.write(
+                        "This will properly capture semantic similarity between queries and chunks.\n\n"
+                    )
                 else:
                     f.write("Use actual semantic embeddings for production evaluation.\n\n")
         else:
             f.write("No failures detected - all queries achieved perfect recall.\n\n")
 
         f.write("## Overall Findings\n\n")
-        f.write("This evaluation measures the retriever's ability to find relevant chunks using Recall@k and Precision@k metrics.\n\n")
+        f.write(
+            "This evaluation measures the retriever's ability to find relevant chunks using Recall@k and Precision@k metrics.\n\n"
+        )
 
         # Check if this is using deterministic embeddings
         if use_deterministic_embeddings:
-            f.write("**IMPORTANT:** This evaluation used deterministic embeddings based on query hash for demonstration purposes.\n")
-            f.write("These results do not reflect actual semantic similarity. For production evaluation, use run_evaluation.py with a live OPENAI_API_KEY.\n\n")
+            f.write(
+                "**IMPORTANT:** This evaluation used deterministic embeddings based on query hash for demonstration purposes.\n"
+            )
+            f.write(
+                "These results do not reflect actual semantic similarity. For production evaluation, use run_evaluation.py with a live OPENAI_API_KEY.\n\n"
+            )
 
         f.write(f"- Average Recall@1: {summary.recall_at_1:.2%}\n")
         f.write(f"- Average Recall@3: {summary.recall_at_3:.2%}\n")

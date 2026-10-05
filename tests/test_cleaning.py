@@ -61,7 +61,7 @@ def test_cleaning_is_idempotent(text):
 
 def test_unicode_symbols_negation_and_word_boundaries_survive():
     text = "Do not use >5 mg/m²; ≤0.5 µg.\nहिन्दी\nnon-\nclinical\n5\x00mg"
-    assert clean_text(text) == "Do not use >5 mg/m2; ≤0.5 μg.\nहिन्दी\nnon-\nclinical\n5 mg"
+    assert clean_text(text) == "Do not use >5 mg/m²; ≤0.5 µg.\nहिन्दी\nnon-\nclinical\n5 mg"
     assert clean_text("a\u2028b\u2029c\fd") == "a\nb\n\nc\n\nd"
 
 

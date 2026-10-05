@@ -57,7 +57,7 @@ class TestTokenChunking:
         overlap_found = False
         for i in range(len(chunks) - 1):
             # Check if the end of chunk i appears anywhere in chunk i+1
-            if chunks[i].text[-30:] in chunks[i+1].text:
+            if chunks[i].text[-30:] in chunks[i + 1].text:
                 overlap_found = True
                 break
         assert overlap_found, "No overlap found between adjacent chunks"
@@ -96,9 +96,7 @@ class TestTokenChunking:
         """Source metadata should be preserved in chunks."""
         text = "Test text for metadata preservation."
         metadata = {"key1": "value1", "key2": "value2"}
-        chunks = token_chunks(
-            text, source="test.txt", filename="test.txt", metadata=metadata
-        )
+        chunks = token_chunks(text, source="test.txt", filename="test.txt", metadata=metadata)
         assert len(chunks) == 1
         assert chunks[0].source == "test.txt"
         assert chunks[0].filename == "test.txt"
@@ -134,7 +132,9 @@ class TestTokenChunking:
         """Metadata should be isolated between chunks."""
         text = "Test text for metadata isolation. " * 20
         metadata = {"key": "value"}
-        chunks = token_chunks(text, source="test.txt", filename="test.txt", size=30, overlap=5, metadata=metadata)
+        chunks = token_chunks(
+            text, source="test.txt", filename="test.txt", size=30, overlap=5, metadata=metadata
+        )
         assert len(chunks) >= 2, "Need at least 2 chunks to test isolation"
         # Modify metadata in first chunk
         chunks[0].metadata["key"] = "modified"
@@ -150,7 +150,13 @@ This document provides current approved guidance for vaccination protocols in pu
 Section 1: Core Vaccination Principles
 
 Vaccination guidance should always be checked against the latest approved official version. Public health officials recommend following current guidelines from authoritative sources such as the CDC and WHO. Regular updates ensure that vaccination policies reflect the most recent scientific evidence and epidemiological data."""
-        chunks = token_chunks(text, source="vaccination_guidance.txt", filename="vaccination_guidance.txt", size=100, overlap=0)
+        chunks = token_chunks(
+            text,
+            source="vaccination_guidance.txt",
+            filename="vaccination_guidance.txt",
+            size=100,
+            overlap=0,
+        )
         assert len(chunks) >= 2
         stats = calculate_token_chunk_stats(chunks)
         assert stats.chunk_count == len(chunks)
@@ -166,7 +172,13 @@ This document provides current approved guidance for vaccination protocols in pu
 Section 1: Core Vaccination Principles
 
 Vaccination guidance should always be checked against the latest approved official version. Public health officials recommend following current guidelines from authoritative sources such as the CDC and WHO. Regular updates ensure that vaccination policies reflect the most recent scientific evidence and epidemiological data."""
-        chunks = token_chunks(text, source="vaccination_guidance.txt", filename="vaccination_guidance.txt", size=100, overlap=20)
+        chunks = token_chunks(
+            text,
+            source="vaccination_guidance.txt",
+            filename="vaccination_guidance.txt",
+            size=100,
+            overlap=20,
+        )
         assert len(chunks) >= 2
         stats = calculate_token_chunk_stats(chunks)
         assert stats.chunk_count == len(chunks)
@@ -184,11 +196,15 @@ evidence and epidemiological data available from the CDC and WHO.
     """.strip()
 
         # Without overlap
-        chunks_no_overlap = token_chunks(text, source="demo.txt", filename="demo.txt", size=40, overlap=0)
+        chunks_no_overlap = token_chunks(
+            text, source="demo.txt", filename="demo.txt", size=40, overlap=0
+        )
         assert len(chunks_no_overlap) == 2
 
         # With overlap
-        chunks_with_overlap = token_chunks(text, source="demo.txt", filename="demo.txt", size=40, overlap=10)
+        chunks_with_overlap = token_chunks(
+            text, source="demo.txt", filename="demo.txt", size=40, overlap=10
+        )
         assert len(chunks_with_overlap) == 2
 
         # Verify overlap preserves context - check if end of chunk 0 appears in chunk 1
@@ -198,9 +214,29 @@ evidence and epidemiological data available from the CDC and WHO.
     def test_custom_encoding_name(self):
         """Test custom encoding name parameter."""
         text = "Test text for custom encoding."
-        chunks = token_chunks(text, source="test.txt", filename="test.txt", size=50, overlap=0, encoding_name="cl100k_base")
+        chunks = token_chunks(
+            text,
+            source="test.txt",
+            filename="test.txt",
+            size=50,
+            overlap=0,
+            encoding_name="cl100k_base",
+        )
         assert len(chunks) == 1
         assert chunks[0].token_count > 0
+
+    def test_unicode_character_is_never_split_into_replacement_characters(self):
+        chunks = token_chunks("😀", source="test.txt", filename="test.txt", size=1, overlap=0)
+
+        assert [chunk.text for chunk in chunks] == ["😀"]
+        assert chunks[0].token_count > 1
+
+    def test_tokenizer_special_text_is_treated_as_document_content(self):
+        text = "Guidance label: <|endoftext|>."
+
+        chunks = token_chunks(text, source="test.txt", filename="test.txt", size=100, overlap=0)
+
+        assert [chunk.text for chunk in chunks] == [text]
 
     def test_calculate_token_chunk_stats_empty(self):
         """Test stats calculation with empty chunk list."""

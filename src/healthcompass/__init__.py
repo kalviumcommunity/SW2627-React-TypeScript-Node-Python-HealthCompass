@@ -10,6 +10,7 @@ from .rag import (
     get_max_context_tokens,
 )
 from .vector_store import (
+    BatchUpsertResult,
     RetrievalResult,
     VectorRecord,
     VectorStoreConfig,
@@ -22,6 +23,7 @@ from .vector_store import (
     initialize_vector_store,
     insert_record,
     retrieve,
+    upsert_records,
 )
 
 __all__ = [
@@ -32,6 +34,7 @@ __all__ = [
     "count_tokens",
     "format_chunk_with_source",
     "get_max_context_tokens",
+    "BatchUpsertResult",
     "RetrievalResult",
     "VectorRecord",
     "VectorStoreConfig",
@@ -44,4 +47,5 @@ __all__ = [
     "initialize_vector_store",
     "insert_record",
     "retrieve",
+    "upsert_records",
 ]

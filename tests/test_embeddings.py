@@ -62,8 +62,10 @@ class TestEmbeddingConfig:
 
     def test_get_embedding_config_missing_api_key(self):
         """Test that missing API key raises EmbeddingError."""
-        with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=True):
-            with pytest.raises(EmbeddingError, match="OPENAI_API_KEY is required"):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(
+                EmbeddingError, match="OPENAI_API_KEY environment variable is not set"
+            ):
                 get_embedding_config()
 
 
@@ -606,12 +608,86 @@ class TestCostEstimation:
         assert cost == 0.0
 
 
+class TestRetryLogic:
+    """Test retry logic with exponential backoff."""
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    @patch("healthcompass.ingestion.embeddings.time.sleep")
+    def test_retry_on_temporary_error(self, mock_sleep, mock_openai):
+        """Test that temporary errors trigger retry with backoff."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # First call fails with connection error, second succeeds
+        mock_client.embeddings.create.side_effect = [
+            Exception("Connection failed"),
+            MagicMock(data=[MagicMock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+
+        client = openai.OpenAI(api_key="test-key")
+        embeddings = call_embedding_api_with_retry(
+            client, ["test text"], "text-embedding-3-small", max_attempts=2
+        )
+
+        assert len(embeddings) == 1
+        assert mock_sleep.call_count == 1  # Should sleep once
+        assert mock_sleep.call_args[0][0] == 1  # First backoff is 1 second
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    @patch("healthcompass.ingestion.embeddings.time.sleep")
+    def test_exponential_backoff_sequence(self, mock_sleep, mock_openai):
+        """Test that backoff follows exponential sequence."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Fail twice, succeed on third
+        mock_client.embeddings.create.side_effect = [
+            Exception("Connection failed"),
+            Exception("Connection failed"),
+            MagicMock(data=[MagicMock(embedding=[0.1, 0.2, 0.3])]),
+        ]
+
+        client = openai.OpenAI(api_key="test-key")
+        embeddings = call_embedding_api_with_retry(
+            client, ["test text"], "text-embedding-3-small", max_attempts=3
+        )
+
+        assert len(embeddings) == 1
+        assert mock_sleep.call_count == 2
+        assert mock_sleep.call_args_list[0][0][0] == 1  # First backoff
+        assert mock_sleep.call_args_list[1][0][0] == 2  # Second backoff
+
+    @patch("healthcompass.ingestion.embeddings.openai.OpenAI")
+    def test_no_retry_on_permanent_error(self, mock_openai):
+        """Test that permanent errors don't trigger retry."""
+        mock_client = MagicMock()
+        mock_openai.return_value = mock_client
+
+        # Create a generic API error that should not be retried
+        mock_client.embeddings.create.side_effect = Exception("Permanent error")
+
+        client = openai.OpenAI(api_key="test-key")
+        with pytest.raises(EmbeddingError, match="Unexpected error during embedding API call"):
+            call_embedding_api_with_retry(
+                client, ["test text"], "text-embedding-3-small", max_attempts=3
+            )
+
+
 class TestBatchSplitting:
     """Test batch splitting logic."""
 
     def test_correct_batch_splitting(self):
         """Test that chunks are split into correct batch sizes."""
-        chunks = [{"text": f"Text {i}", "source": "test.txt", "filename": "test.txt", "chunk_id": i, "metadata": {}} for i in range(10)]
+        chunks = [
+            {
+                "text": f"Text {i}",
+                "source": "test.txt",
+                "filename": "test.txt",
+                "chunk_id": i,
+                "metadata": {},
+            }
+            for i in range(10)
+        ]
         batch_size = 3
         expected_batches = 4  # 10 chunks / 3 = 4 batches (3, 3, 3, 1)
 

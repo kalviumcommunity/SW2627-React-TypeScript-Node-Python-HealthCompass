@@ -29,6 +29,7 @@ from .embeddings import (
     save_embeddings_incremental,
     validate_embeddings,
 )
+from .indexing import index_embedded_chunks, to_vector_record
 from .loader import (
     CorpusIngestionResult,
     DocumentLoadError,
@@ -61,6 +62,8 @@ __all__ = [
     "tag_chunks",
     "IngestionResult",
     "ingest",
+    "index_embedded_chunks",
+    "to_vector_record",
     "EmbeddingError",
     "EmbeddingManifest",
     "EmbeddingResult",
