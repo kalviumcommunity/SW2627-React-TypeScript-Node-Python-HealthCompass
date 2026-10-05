@@ -47,3 +47,9 @@ evaluation/results/*.md
 
 # Context injection demonstration results (generated, can be regenerated)
 experiments/outputs/context_injection_results.md
+
+# Frontend dependencies and build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+

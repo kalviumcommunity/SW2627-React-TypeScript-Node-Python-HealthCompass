@@ -1,0 +1,288 @@
+"""FastAPI server for HealthCompass RAG application."""
+
+import os
+from typing import List, Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from healthcompass.rag import build_augmented_prompt
+from healthcompass.vector_store import initialize_vector_store, retrieve, embed_query
+
+load_dotenv()
+
+app = FastAPI(title="HealthCompass API", version="1.0.0")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],  # Vite default ports
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class AskRequest(BaseModel):
+    """Request model for ask endpoint."""
+
+    question: str
+
+
+class SourceInfo(BaseModel):
+    """Source information from retrieval."""
+
+    chunk_id: str
+    source: str
+    chunk_index: str
+    rank: int
+    distance: float
+
+
+class AskResponse(BaseModel):
+    """Response model for ask endpoint."""
+
+    answer: str
+    sources: List[SourceInfo]
+    context_tokens: int
+    chunks_used: int
+
+
+class GuidanceItem(BaseModel):
+    """Guidance item for library."""
+
+    id: str
+    title: str
+    topic: str
+    description: str
+    source: str
+    last_updated: str
+
+
+class AlertItem(BaseModel):
+    """Alert item for alert center."""
+
+    id: str
+    severity: str
+    topic: str
+    location: Optional[str]
+    date: str
+    description: str
+    status: str
+
+
+class UpdateItem(BaseModel):
+    """Policy update item."""
+
+    id: str
+    title: str
+    category: str
+    date: str
+    summary: str
+    importance: str
+
+
+# Sample/demo data for pages that don't have backend data yet
+SAMPLE_GUIDANCE = [
+    GuidanceItem(
+        id="1",
+        title="Vaccination Priority Groups",
+        topic="Vaccination",
+        description="Guidance on priority groups for vaccination during public health emergencies",
+        source="vaccination_guidance.txt",
+        last_updated="2026-09-15",
+    ),
+    GuidanceItem(
+        id="2",
+        title="Fever Management in Children",
+        topic="Child Health",
+        description="Protocol for managing high fever in pediatric patients",
+        source="child_health_guidance.txt",
+        last_updated="2026-09-10",
+    ),
+    GuidanceItem(
+        id="3",
+        title="Emergency Response Protocol",
+        topic="Emergency Response",
+        description="Standard operating procedures for emergency health situations",
+        source="emergency_protocol.txt",
+        last_updated="2026-09-08",
+    ),
+]
+
+SAMPLE_ALERTS = [
+    AlertItem(
+        id="1",
+        severity="Critical",
+        topic="Disease Outbreak",
+        location="District A",
+        date="2026-09-28",
+        description="Increased respiratory illness cases reported in District A",
+        status="Active",
+    ),
+    AlertItem(
+        id="2",
+        severity="High",
+        topic="Vaccine Supply",
+        location="Regional",
+        date="2026-09-25",
+        description="Temporary vaccine shortage due to supply chain delays",
+        status="Monitoring",
+    ),
+]
+
+SAMPLE_UPDATES = [
+    UpdateItem(
+        id="1",
+        title="Updated Isolation Guidelines",
+        category="Infection Control",
+        date="2026-09-27",
+        summary="New isolation protocols for respiratory infections",
+        importance="High",
+    ),
+    UpdateItem(
+        id="2",
+        title="Vaccination Schedule Changes",
+        category="Vaccination",
+        date="2026-09-20",
+        summary="Revised dosing intervals for booster vaccinations",
+        importance="Medium",
+    ),
+]
+
+
+@app.get("/")
+def read_root():
+    """Root endpoint."""
+    return {"message": "HealthCompass API", "version": "1.0.0"}
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+@app.post("/ask", response_model=AskResponse)
+def ask_healthcompass(request: AskRequest):
+    """
+    Ask HealthCompass a question using RAG pipeline.
+
+    This endpoint:
+    1. Embeds the user query
+    2. Retrieves relevant chunks from vector database
+    3. Builds augmented prompt with context
+    4. Returns answer with sources (generation not yet implemented)
+    """
+    try:
+        # Initialize vector database
+        collection = initialize_vector_store()
+
+        # Try to retrieve relevant chunks
+        # If no API key, we'll use a fallback approach
+        try:
+            retrieved_chunks = retrieve(request.question, k=5, collection=collection)
+        except Exception as e:
+            if "OPENAI_API_KEY" in str(e):
+                # Fallback: return demo results without embedding
+                # This allows the frontend to work for demonstration
+                return AskResponse(
+                    answer=f"Demonstration mode: Unable to generate embeddings without API key.\n\nQuestion: {request.question}\n\nTo enable full RAG functionality, please configure OPENAI_API_KEY in the backend environment.",
+                    sources=[],
+                    context_tokens=0,
+                    chunks_used=0,
+                )
+            raise
+
+        if not retrieved_chunks:
+            return AskResponse(
+                answer="I don't have enough information in the provided context to answer this question.",
+                sources=[],
+                context_tokens=0,
+                chunks_used=0,
+            )
+
+        # Build augmented prompt (generation would happen here)
+        prompt_result = build_augmented_prompt(request.question, retrieved_chunks)
+
+        # Convert sources to response format
+        sources = [
+            SourceInfo(
+                chunk_id=source_info["chunk_id"],
+                source=source_info["source"],
+                chunk_index=source_info["chunk_index"],
+                rank=source_info["rank"],
+                distance=source_info["distance"],
+            )
+            for source_info in prompt_result.sources_used
+        ]
+
+        # For now, return a placeholder answer since LLM generation is not implemented
+        # In production, this would call the LLM with the augmented prompt
+        answer = f"Based on the retrieved context, here's information about: {request.question}\n\n[Note: LLM generation not yet implemented - this is a placeholder response. Retrieved {len(retrieved_chunks)} relevant chunks from the knowledge base.]"
+
+        return AskResponse(
+            answer=answer,
+            sources=sources,
+            context_tokens=prompt_result.context_tokens,
+            chunks_used=prompt_result.chunks_used,
+        )
+
+    except Exception as e:
+        error_msg = str(e)
+        if "OPENAI_API_KEY" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Service temporarily unavailable: OpenAI API key not configured. Please contact your administrator."
+            )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/guidance", response_model=List[GuidanceItem])
+def get_guidance():
+    """Get available guidance documents."""
+    return SAMPLE_GUIDANCE
+
+
+@app.get("/guidance/search", response_model=List[GuidanceItem])
+def search_guidance(query: str):
+    """Search guidance by topic or title."""
+    query_lower = query.lower()
+    return [
+        item
+        for item in SAMPLE_GUIDANCE
+        if query_lower in item.title.lower()
+        or query_lower in item.topic.lower()
+        or query_lower in item.description.lower()
+    ]
+
+
+@app.get("/alerts", response_model=List[AlertItem])
+def get_alerts():
+    """Get active alerts."""
+    return SAMPLE_ALERTS
+
+
+@app.get("/updates", response_model=List[UpdateItem])
+def get_updates():
+    """Get recent policy updates."""
+    return SAMPLE_UPDATES
+
+
+@app.get("/stats")
+def get_stats():
+    """Get dashboard statistics."""
+    return {
+        "active_alerts": len(SAMPLE_ALERTS),
+        "new_guidance": len(SAMPLE_GUIDANCE),
+        "policy_updates": len(SAMPLE_UPDATES),
+        "saved_guidance": 0,  # Would come from user data
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

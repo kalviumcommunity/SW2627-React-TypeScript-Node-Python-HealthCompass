@@ -66,6 +66,52 @@ HealthCompass addresses this problem through:
 
 ---
 
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.9+
+- Node.js 18+
+- npm
+
+### Backend Setup
+
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your OpenAI API key and other settings
+
+# Start the backend server
+python -m uvicorn src.api_server:app --host 0.0.0.0 --port 8000
+```
+
+### Frontend Setup
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your API URL (default: http://localhost:8000)
+
+# Start the development server
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173` (or the next available port).
+
+---
+
 # 🔎 Overview
 
 HealthCompass is designed as a **trusted information access layer** between official public health guidance and the workers who need that guidance in the field.
@@ -513,39 +559,17 @@ health authority or applicable emergency protocol.
                                        │
                                        ▼
                            ┌───────────────────────┐
-                           │      Express API      │
-                           │ Auth + Business Logic │
+                           │     FastAPI API      │
+                           │   RAG + Data Layer    │
                            └───────────┬───────────┘
                                        │
                ┌───────────────────────┼───────────────────────┐
                │                       │                       │
                ▼                       ▼                       ▼
         ┌─────────────┐         ┌─────────────┐         ┌──────────────┐
-        │   MongoDB   │         │    Redis    │         │ Notification │
-        │  Database   │         │    Cache    │         │   Service    │
+        │   ChromaDB  │         │   OpenAI    │         │  Document    │
+        │  Vector DB  │         │  API/LLM    │         │   Pipeline   │
         └─────────────┘         └─────────────┘         └──────────────┘
-                                       │
-                                       ▼
-                           ┌───────────────────────┐
-                           │ Document Processing   │
-                           │    Python Workers     │
-                           └───────────┬───────────┘
-                                       │
-                         ┌─────────────┼─────────────┐
-                         ▼             ▼             ▼
-                  Text Extraction  Metadata      Embeddings
-                         │         Extraction          │
-                         └─────────────┼─────────────┘
-                                       ▼
-                           ┌───────────────────────┐
-                           │ Vector Search / Index │
-                           └───────────┬───────────┘
-                                       │
-                                       ▼
-                           ┌───────────────────────┐
-                           │     FastAPI AI        │
-                           │       RAG Service     │
-                           └───────────┬───────────┘
                                        │
                                        ▼
                            Source-Grounded Answer
@@ -557,39 +581,31 @@ health authority or applicable emergency protocol.
 
 ## Frontend
 
-- React
+- React 18
 - TypeScript
+- Vite
 - Tailwind CSS
-- Redux Toolkit
-- React Query
-- Recharts
+- React Router
+- Lucide React (icons)
 
 ## Backend
 
-- Node.js
-- Express.js
-
-## AI Service
-
-- Python
+- Python 3.9+
 - FastAPI
-- RAG pipeline
-- Embedding model
-- LLM
+- Pydantic
 
-## Database
+## AI / RAG
 
-- MongoDB
-- Redis
+- OpenAI API (embeddings + chat)
+- ChromaDB (vector database)
+- tiktoken (tokenization)
 
-## Vector Search
+## Document Processing
 
-Recommended options:
-
-- Qdrant
-- pgvector
-- Pinecone
-- Weaviate
+- Multi-format ingestion (PDF, TXT, Markdown, HTML)
+- Conservative text cleaning
+- Token-aware chunking
+- Metadata extraction
 
 ## Document Processing
 
@@ -621,30 +637,58 @@ healthcompass/
 │
 ├── frontend/
 │   ├── src/
+│   │   ├── api/
+│   │   │   └── client.ts          # API client and type definitions
 │   │   ├── components/
+│   │   │   └── layout/
+│   │   │       └── Layout.tsx      # Main layout with sidebar
 │   │   ├── pages/
-│   │   ├── layouts/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   ├── store/
-│   │   ├── types/
-│   │   └── utils/
-│   ├── public/
-│   └── package.json
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── AskHealthCompass.tsx
+│   │   │   ├── GuidanceLibrary.tsx
+│   │   │   ├── Updates.tsx
+│   │   │   ├── Alerts.tsx
+│   │   │   └── SavedGuidance.tsx
+│   │   ├── App.tsx                # Main app with routing
+│   │   ├── main.tsx               # Entry point
+│   │   └── index.css              # Tailwind CSS imports
+│   ├── .env.example               # Environment configuration template
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── vite.config.ts
 │
-├── backend/
-│   ├── src/
-│   │   ├── controllers/
-│   │   ├── routes/
-│   │   ├── middleware/
-│   │   ├── models/
-│   │   ├── services/
-│   │   ├── validators/
-│   │   ├── utils/
-│   │   └── app.ts
-│   └── package.json
+├── src/
+│   ├── api_server.py              # FastAPI backend server
+│   ├── app.py                     # CLI tool for LLM experiments
+│   └── healthcompass/
+│       ├── chat/                  # Chat history and conversation management
+│       ├── ingestion/             # Document ingestion, embeddings, indexing
+│       ├── prompts/               # System prompts and templates
+│       ├── rag/                   # RAG context injection and prompt augmentation
+│       └── vector_store/          # ChromaDB vector store and retrieval
 │
-├── ai-service/
+├── evaluation/                    # Retrieval evaluation framework
+│   ├── evaluate_retrieval.py
+│   ├── labelled_queries.json
+│   └── results/
+│
+├── experiments/                   # RAG and LLM experiments
+│   ├── document_intake.py
+│   ├── context_injection_demo.py
+│   └── outputs/
+│
+├── tests/                         # Unit tests
+│
+├── docs/                          # Documentation
+│
+├── data/                          # Data directory
+│   └── chroma_db/                 # ChromaDB persistent storage
+│
+├── requirements.txt              # Python dependencies
+├── .env.example                   # Environment configuration template
+├── .gitignore
+└── README.md
+```
 │   ├── app/
 │   │   ├── api/
 │   │   ├── rag/
@@ -822,20 +866,61 @@ Query
 
 # 🔌 API Overview
 
-Example API groups:
+## Current API Endpoints
+
+The FastAPI backend provides the following endpoints:
 
 ```text
-/api/auth
-/api/users
-/api/documents
-/api/documents/:id
-/api/documents/:id/versions
-/api/search
-/api/guidance/ask
-/api/guidance/sources
-/api/alerts
-/api/feedback
-/api/admin
+GET  /                         Root endpoint
+GET  /health                   Health check
+POST /ask                      Ask HealthCompass a question (RAG)
+GET  /guidance                 Get all guidance items
+GET  /guidance/search          Search guidance by query
+GET  /alerts                   Get active alerts
+GET  /updates                  Get policy updates
+GET  /stats                    Get dashboard statistics
+```
+
+### Ask Endpoint
+
+```http
+POST /ask
+Content-Type: application/json
+```
+
+```json
+{
+  "question": "What are the priority groups for vaccination?"
+}
+```
+
+Response:
+
+```json
+{
+  "answer": "Based on the retrieved context...",
+  "sources": [
+    {
+      "chunk_id": "vaccination_chunk_0",
+      "source": "vaccination_guidance.txt",
+      "chunk_index": "0",
+      "rank": 1,
+      "distance": 0.1234
+    }
+  ],
+  "context_tokens": 627,
+  "chunks_used": 2
+}
+```
+
+### Other Endpoints
+
+```text
+GET /guidance - Returns list of guidance documents
+GET /guidance/search?query=... - Search guidance by topic/title/description
+GET /alerts - Returns active health alerts
+GET /updates - Returns recent policy updates
+GET /stats - Returns dashboard statistics (alerts, guidance, updates count)
 ```
 
 ---
