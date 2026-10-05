@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, List, Mapping, Sequence
 
 from dotenv import load_dotenv
+import openai
 
 from healthcompass.providers import get_embedding_provider
 
@@ -127,17 +128,22 @@ def get_embedding_config() -> tuple[str, str, int, int]:
     Raises:
         EmbeddingError: If configuration is invalid
     """
-    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER")
     batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
     max_retry_attempts = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
 
-    if embedding_provider == "local":
+    if embedding_provider is None:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise EmbeddingError("OPENAI_API_KEY environment variable is not set")
+        embedding_provider = "openai"
+        model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    elif embedding_provider == "local":
         model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     elif embedding_provider == "openai":
         model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         if not os.getenv("OPENAI_API_KEY"):
             raise EmbeddingError(
-                "OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai"
+                "OPENAI_API_KEY environment variable is not set"
             )
     else:
         raise EmbeddingError(
@@ -365,6 +371,10 @@ def _call_embedding_api_with_retry(
                 raise EmbeddingError(f"Unexpected error during embedding API call: {e}") from e
 
     raise EmbeddingError(f"Failed to complete embedding after {max_attempts} attempts")
+
+
+# Alias for backward compatibility with tests
+call_embedding_api_with_retry = _call_embedding_api_with_retry
 
 
 def call_embedding_api_with_retry(
