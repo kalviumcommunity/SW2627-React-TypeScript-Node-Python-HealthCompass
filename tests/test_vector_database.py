@@ -782,3 +782,62 @@ def test_retrieve_results_sorted_by_rank(test_config):
             assert results[0].chunk_id == "chunk_2"
             assert results[1].chunk_id == "chunk_0"
             assert results[2].chunk_id == "chunk_1"
+
+
+def test_retrieve_passes_metadata_filter_to_chroma(test_config):
+    """Metadata filters limit eligible records before vector ranking."""
+    collection = initialize_vector_store(test_config)
+    insert_record(
+        collection,
+        VectorRecord(
+            id="district-a",
+            embedding=[0.1] * test_config.embedding_dimension,
+            text="District A vaccination guidance",
+            metadata={"region": "District A"},
+        ),
+    )
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query", return_value=[0.1] * 1536):
+        with patch.object(collection, "query") as mock_query:
+            mock_query.return_value = {
+                "ids": [["district-a"]],
+                "distances": [[0.1]],
+                "documents": [["District A vaccination guidance"]],
+                "metadatas": [[{"region": "District A"}]],
+            }
+            results = retrieve(
+                "vaccination guidance", collection, metadata_filter={"region": "District A"}
+            )
+
+    assert [result.chunk_id for result in results] == ["district-a"]
+    assert mock_query.call_args.kwargs["where"] == {"region": "District A"}
+
+
+def test_hybrid_retrieval_promotes_keyword_match(test_config):
+    """Keyword overlap can promote a relevant candidate above vector-only order."""
+    collection = initialize_vector_store(test_config)
+    insert_record(
+        collection,
+        VectorRecord(id="seed", embedding=[0.1] * 1536, text="seed", metadata={"region": "A"}),
+    )
+
+    with patch("healthcompass.vector_store.chroma_store.embed_query", return_value=[0.1] * 1536):
+        with patch.object(collection, "query") as mock_query:
+            mock_query.return_value = {
+                "ids": [["semantic-first", "keyword-match"]],
+                "distances": [[0.1, 0.8]],
+                "documents": [["General operational guidance", "Vaccine storage guidance"]],
+                "metadatas": [[{"region": "A"}, {"region": "A"}]],
+            }
+            results = retrieve("vaccine storage", collection, k=2, keyword_weight=0.8)
+
+    assert results[0].chunk_id == "keyword-match"
+    assert results[0].hybrid_score is not None
+    assert mock_query.call_args.kwargs["n_results"] == 1
+
+
+@pytest.mark.parametrize("keyword_weight", [-0.1, 1.1])
+def test_retrieve_rejects_invalid_keyword_weight(test_config, keyword_weight):
+    collection = initialize_vector_store(test_config)
+    with pytest.raises(VectorStoreError, match="keyword_weight"):
+        retrieve("query", collection, keyword_weight=keyword_weight)

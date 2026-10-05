@@ -873,12 +873,15 @@ The FastAPI backend provides the following endpoints:
 ```text
 GET  /                         Root endpoint
 GET  /health                   Health check
-POST /ask                      Ask HealthCompass a question (RAG)
+POST /ask                      Ask HealthCompass a question (RAG with citations)
+POST /ask/stream               Stream grounded answer tokens via Server-Sent Events (SSE)
+POST /documents/upload         Upload & index guidelines into ChromaDB at runtime
 GET  /guidance                 Get all guidance items
 GET  /guidance/search          Search guidance by query
 GET  /alerts                   Get active alerts
 GET  /updates                  Get policy updates
 GET  /stats                    Get dashboard statistics
+GET  /stats/usage              Get telemetry, latency & cache hit rate metrics
 ```
 
 ### Ask Endpoint
@@ -890,7 +893,10 @@ Content-Type: application/json
 
 ```json
 {
-  "question": "What are the priority groups for vaccination?"
+  "question": "What are the priority groups for vaccination in District A?",
+  "metadata_filter": { "region": "District A" },
+  "keyword_weight": 0.2,
+  "top_k": 3
 }
 ```
 
@@ -898,7 +904,17 @@ Response:
 
 ```json
 {
-  "answer": "Based on the retrieved context...",
+  "answer": "Vaccination guidance prioritizes healthcare workers and elderly individuals [1].",
+  "citations": [
+    {
+      "index": 1,
+      "chunk_id": "vaccination_chunk_0",
+      "source": "vaccination_guidance.txt",
+      "section": "Priority Groups",
+      "snippet": "High-risk populations include healthcare workers...",
+      "distance": 0.1234
+    }
+  ],
   "sources": [
     {
       "chunk_id": "vaccination_chunk_0",
@@ -908,10 +924,23 @@ Response:
       "distance": 0.1234
     }
   ],
-  "context_tokens": 627,
-  "chunks_used": 2
+  "context_tokens": 420,
+  "chunks_used": 1,
+  "chunks_retrieved": 5,
+  "is_refusal": false,
+  "faithfulness_score": 0.95,
+  "latency_ms": 18.4,
+  "cached": false
 }
 ```
+
+### Document Upload Endpoint
+
+```http
+POST /documents/upload
+Content-Type: multipart/form-data
+```
+Accepts `.pdf`, `.txt`, `.md`, or `.html` files. The server loads, cleans, chunks, embeds, and indexes the document into ChromaDB at runtime.
 
 ### Other Endpoints
 

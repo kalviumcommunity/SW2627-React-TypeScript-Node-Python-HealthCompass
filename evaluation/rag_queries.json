@@ -1,0 +1,37 @@
+[
+  {
+    "id": "rag-q1",
+    "question": "What are the priority groups for vaccination during emergencies?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keywords": ["priority", "healthcare", "vulnerable"],
+    "should_refuse": false
+  },
+  {
+    "id": "rag-q2",
+    "question": "What are the cold chain storage requirements for vaccines?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keywords": ["storage", "temperature", "cold"],
+    "should_refuse": false
+  },
+  {
+    "id": "rag-q3",
+    "question": "What is the recommended isolation duration for alien virus infection on Mars colony?",
+    "expected_source": null,
+    "expected_keywords": [],
+    "should_refuse": true
+  },
+  {
+    "id": "rag-q4",
+    "question": "How should adverse events following immunization be monitored?",
+    "expected_source": "vaccination_guidance.txt",
+    "expected_keywords": ["adverse", "surveillance", "monitoring"],
+    "should_refuse": false
+  },
+  {
+    "id": "rag-q5",
+    "question": "What are the local building construction codes for District Z?",
+    "expected_source": null,
+    "expected_keywords": [],
+    "should_refuse": true
+  }
+]

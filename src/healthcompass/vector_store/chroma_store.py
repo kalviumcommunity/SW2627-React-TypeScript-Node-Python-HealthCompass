@@ -1,6 +1,8 @@
 """ChromaDB vector store for HealthCompass RAG system."""
 
 import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,6 +55,7 @@ class RetrievalResult:
     distance: float
     text: str
     metadata: Dict[str, Any]
+    hybrid_score: float | None = None
 
 
 class VectorStoreError(Exception):
@@ -409,6 +412,8 @@ def retrieve(
     collection: chromadb.Collection,
     k: int = 3,
     embedding_model: str | None = None,
+    metadata_filter: Mapping[str, Any] | None = None,
+    keyword_weight: float = 0.0,
 ) -> List[RetrievalResult]:
     """Perform top-k similarity search for a query against the vector database.
 
@@ -417,6 +422,8 @@ def retrieve(
         collection: ChromaDB Collection instance
         k: Number of results to retrieve (default: 3)
         embedding_model: Optional embedding model name, uses environment variable if not provided
+        metadata_filter: Optional Chroma ``where`` filter.
+        keyword_weight: Blend factor from 0 (semantic only) to 1 (keyword only).
 
     Returns:
         List of RetrievalResult objects ranked by similarity
@@ -426,37 +433,69 @@ def retrieve(
     """
     if k <= 0:
         raise VectorStoreError(f"Invalid k value: {k}. k must be greater than 0.")
+    if not 0.0 <= keyword_weight <= 1.0:
+        raise VectorStoreError("keyword_weight must be between 0 and 1.")
+    if metadata_filter is not None and not isinstance(metadata_filter, Mapping):
+        raise VectorStoreError(
+            "metadata_filter must be a mapping compatible with Chroma where filters."
+        )
 
-    if collection.count() == 0:
+    collection_count = collection.count()
+    if collection_count == 0:
         raise VectorStoreError("Cannot retrieve from empty collection.")
 
     try:
         # Embed the query
         query_embedding = embed_query(query, embedding_model)
 
-        # Perform similarity search
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=k,
-            include=["documents", "metadatas", "distances"],
-        )
+        candidate_count = min(collection_count, max(k, k * 3)) if keyword_weight else k
+        query_options: Dict[str, Any] = {
+            "query_embeddings": [query_embedding],
+            "n_results": candidate_count,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if metadata_filter:
+            query_options["where"] = dict(metadata_filter)
+        results = collection.query(**query_options)
+        records = [
+            {
+                "chunk_id": results["ids"][0][index],
+                "distance": results["distances"][0][index],
+                "text": results["documents"][0][index],
+                "metadata": results["metadatas"][0][index],
+            }
+            for index in range(len(results["ids"][0]))
+        ]
+        if keyword_weight:
+            for record in records:
+                semantic_score = 1 / (1 + record["distance"])
+                keyword_score = _keyword_overlap_score(query, record["text"])
+                record["hybrid_score"] = (
+                    1 - keyword_weight
+                ) * semantic_score + keyword_weight * keyword_score
+            records.sort(key=lambda record: record["hybrid_score"], reverse=True)
 
-        # Process results
-        retrieval_results = []
-        for i in range(len(results["ids"][0])):
-            retrieval_results.append(
-                RetrievalResult(
-                    rank=i + 1,
-                    chunk_id=results["ids"][0][i],
-                    distance=results["distances"][0][i],
-                    text=results["documents"][0][i],
-                    metadata=results["metadatas"][0][i],
-                )
+        return [
+            RetrievalResult(
+                rank=index,
+                chunk_id=record["chunk_id"],
+                distance=record["distance"],
+                text=record["text"],
+                metadata=record["metadata"],
+                hybrid_score=record.get("hybrid_score"),
             )
-
-        return retrieval_results
+            for index, record in enumerate(records[:k], start=1)
+        ]
 
     except VectorStoreError:
         raise
     except Exception as e:
         raise VectorStoreError(f"Failed to retrieve results: {e}") from e
+
+
+def _keyword_overlap_score(query: str, text: str) -> float:
+    """Return the fraction of unique query terms present in ``text``."""
+    query_terms = set(re.findall(r"\w+", query.casefold()))
+    if not query_terms:
+        return 0.0
+    return len(query_terms & set(re.findall(r"\w+", text.casefold()))) / len(query_terms)
