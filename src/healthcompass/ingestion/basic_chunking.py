@@ -1,5 +1,6 @@
 """Original single-page baselines retained for compatibility and comparison."""
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import List
 
@@ -234,7 +235,9 @@ def token_chunks(
     Returns:
         List of TokenChunk objects with token counts
 
-    Token-based sizing ensures chunks respect the model's actual unit of processing.
+    Token-based sizing uses the model's actual unit of processing. A single
+    Unicode character can span multiple tokens; those tokens stay together so
+    decoded chunks never contain replacement characters.
     """
     if type(size) is not int or size < 1:
         raise ValueError("size must be a positive integer")
@@ -247,17 +250,34 @@ def token_chunks(
         return []
 
     enc = tiktoken.get_encoding(encoding_name)
-    tokens = enc.encode(text)
+    # Treat literal tokenizer control strings as document content. Source
+    # documents can legitimately contain values such as ``<|endoftext|>``.
+    tokens = enc.encode(text, disallowed_special=())
 
     if not tokens:
         return []
+
+    boundaries = [0]
+    encoded_bytes = bytearray()
+    for index, token in enumerate(tokens, start=1):
+        encoded_bytes.extend(enc.decode_single_token_bytes(token))
+        try:
+            encoded_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        boundaries.append(index)
 
     chunks = []
     start = 0
     chunk_id = 0
 
     while start < len(tokens):
-        end = min(start + size, len(tokens))
+        desired_end = min(start + size, len(tokens))
+        end = boundaries[bisect_right(boundaries, desired_end) - 1]
+        if end == start:
+            # A Unicode code point may need more than ``size`` tokens. Keep it
+            # intact and allow that one chunk to exceed the target.
+            end = boundaries[bisect_right(boundaries, start)]
         chunk_tokens = tokens[start:end]
         chunk_text = enc.decode(chunk_tokens)
         token_count = len(chunk_tokens)
@@ -279,7 +299,12 @@ def token_chunks(
         # Move start position with overlap
         if end >= len(tokens):
             break
-        start = end - overlap
+        desired_start = end - overlap
+        next_start = boundaries[bisect_right(boundaries, desired_start) - 1]
+        # A boundary may fall exactly on the current start when the overlap is
+        # larger than the preceding Unicode-safe span. Advancing without
+        # overlap is preferable to looping forever.
+        start = next_start if next_start > start else end
 
     return chunks
 

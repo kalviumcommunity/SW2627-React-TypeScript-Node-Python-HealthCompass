@@ -64,11 +64,7 @@ def run_embedding_sanity_checks(
             else []
         )
         ranked_sources = [
-            str(
-                record.get("source")
-                or record.get("metadata", {}).get("source")
-                or "unknown"
-            )
+            str(record.get("source") or record.get("metadata", {}).get("source") or "unknown")
             for record in ranked
         ]
         expected_rank = next(

@@ -49,7 +49,9 @@ def evaluate_with_deterministic_embeddings():
 
     # Save results
     output_dir = Path(__file__).parent / "results"
-    json_path, md_path = save_evaluation_results(summary, output_dir, use_deterministic_embeddings=True)
+    json_path, md_path = save_evaluation_results(
+        summary, output_dir, use_deterministic_embeddings=True
+    )
 
     print("Results saved:")
     print(f"  JSON: {json_path}")

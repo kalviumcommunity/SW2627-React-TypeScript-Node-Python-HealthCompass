@@ -132,14 +132,18 @@ def generate_sample_report(result, output_path: Path, summary):
             f.write(f"```\n{chunk.embedding[:5]}\n```\n\n")
 
         if len(result.embedded_chunks) > sample_count:
-            f.write(f"... ({len(result.embedded_chunks) - sample_count} additional chunks omitted)\n\n")
+            f.write(
+                f"... ({len(result.embedded_chunks) - sample_count} additional chunks omitted)\n\n"
+            )
 
         f.write("## Cost and Performance Considerations\n\n")
         f.write("- Embedding generation requires API calls for each batch of chunks\n")
         f.write("- Cost scales with the number of chunks and vector dimension\n")
         f.write("- Latency increases with corpus size and batch size\n")
         f.write("- Batching reduces API overhead but increases per-request complexity\n")
-        f.write("- Larger vector dimensions improve semantic representation but increase storage and computation cost\n")
+        f.write(
+            "- Larger vector dimensions improve semantic representation but increase storage and computation cost\n"
+        )
         f.write("- Skipping existing embeddings reduces unnecessary API calls and cost\n")
         f.write("- Retry logic with exponential backoff handles temporary failures\n")
         f.write("- Progress saving enables resumability for large corpus processing\n\n")

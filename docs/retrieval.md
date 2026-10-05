@@ -36,11 +36,7 @@ The query embedding is compared against all document embeddings in the vector da
 from healthcompass.vector_store import retrieve, initialize_vector_store
 
 collection = initialize_vector_store()
-results = retrieve(
-    query="How can a learner reset their password?",
-    collection=collection,
-    k=3
-)
+results = retrieve(query="How can a learner reset their password?", collection=collection, k=3)
 ```
 
 ### Step 4: Ranked Chunks
@@ -102,11 +98,11 @@ Each retrieved result includes:
 ```python
 @dataclass
 class RetrievalResult:
-    rank: int              # 1 for most similar, 2 for second, etc.
-    chunk_id: str         # Unique identifier for the chunk
-    distance: float        # Cosine distance (lower = more similar)
-    text: str             # Original chunk text
-    metadata: dict        # Source information and chunk details
+    rank: int  # 1 for most similar, 2 for second, etc.
+    chunk_id: str  # Unique identifier for the chunk
+    distance: float  # Cosine distance (lower = more similar)
+    text: str  # Original chunk text
+    metadata: dict  # Source information and chunk details
 ```
 
 ### Metadata Fields
@@ -128,11 +124,7 @@ from healthcompass.vector_store import retrieve, initialize_vector_store
 collection = initialize_vector_store()
 
 # Retrieve top 3 results
-results = retrieve(
-    query="How can a learner reset their password?",
-    collection=collection,
-    k=3
-)
+results = retrieve(query="How can a learner reset their password?", collection=collection, k=3)
 
 # Display results
 for result in results:
@@ -146,11 +138,7 @@ for result in results:
 
 ```python
 # Retrieve top 5 results
-results = retrieve(
-    query="What are the vaccination requirements?",
-    collection=collection,
-    k=5
-)
+results = retrieve(query="What are the vaccination requirements?", collection=collection, k=5)
 ```
 
 ### Custom Embedding Model
@@ -158,10 +146,7 @@ results = retrieve(
 ```python
 # Use a different embedding model
 results = retrieve(
-    query="Query text",
-    collection=collection,
-    k=3,
-    embedding_model="text-embedding-3-large"
+    query="Query text", collection=collection, k=3, embedding_model="text-embedding-3-large"
 )
 ```
 
@@ -294,11 +279,9 @@ The retrieval results are designed for integration with RAG generation:
 Example context construction:
 
 ```python
-context = "\n\n".join([
-    f"Source: {r.metadata.get('source', 'N/A')}\n"
-    f"Text: {r.text}"
-    for r in results
-])
+context = "\n\n".join(
+    [f"Source: {r.metadata.get('source', 'N/A')}\nText: {r.text}" for r in results]
+)
 ```
 
 ## Troubleshooting

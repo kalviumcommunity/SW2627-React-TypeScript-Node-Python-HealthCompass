@@ -65,7 +65,9 @@ class TestEmbeddingConfig:
     def test_get_embedding_config_missing_api_key(self):
         """Test that missing API key raises EmbeddingError."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(EmbeddingError, match="OPENAI_API_KEY environment variable is not set"):
+            with pytest.raises(
+                EmbeddingError, match="OPENAI_API_KEY environment variable is not set"
+            ):
                 get_embedding_config()
 
 
@@ -854,7 +856,9 @@ class TestRetryLogic:
         ]
 
         client = openai.OpenAI(api_key="test-key")
-        embeddings = call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=2)
+        embeddings = call_embedding_api_with_retry(
+            client, ["test text"], "text-embedding-3-small", max_attempts=2
+        )
 
         assert len(embeddings) == 1
         assert mock_sleep.call_count == 1  # Should sleep once
@@ -875,7 +879,9 @@ class TestRetryLogic:
         ]
 
         client = openai.OpenAI(api_key="test-key")
-        embeddings = call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=3)
+        embeddings = call_embedding_api_with_retry(
+            client, ["test text"], "text-embedding-3-small", max_attempts=3
+        )
 
         assert len(embeddings) == 1
         assert mock_sleep.call_count == 2
@@ -893,7 +899,9 @@ class TestRetryLogic:
 
         client = openai.OpenAI(api_key="test-key")
         with pytest.raises(EmbeddingError, match="Unexpected error during embedding API call"):
-            call_embedding_api_with_retry(client, ["test text"], "text-embedding-3-small", max_attempts=3)
+            call_embedding_api_with_retry(
+                client, ["test text"], "text-embedding-3-small", max_attempts=3
+            )
 
 
 class TestBatchSplitting:
@@ -901,7 +909,16 @@ class TestBatchSplitting:
 
     def test_correct_batch_splitting(self):
         """Test that chunks are split into correct batch sizes."""
-        chunks = [{"text": f"Text {i}", "source": "test.txt", "filename": "test.txt", "chunk_id": i, "metadata": {}} for i in range(10)]
+        chunks = [
+            {
+                "text": f"Text {i}",
+                "source": "test.txt",
+                "filename": "test.txt",
+                "chunk_id": i,
+                "metadata": {},
+            }
+            for i in range(10)
+        ]
         batch_size = 3
         expected_batches = 4  # 10 chunks / 3 = 4 batches (3, 3, 3, 1)
 

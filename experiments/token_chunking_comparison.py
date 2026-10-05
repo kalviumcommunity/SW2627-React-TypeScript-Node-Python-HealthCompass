@@ -146,8 +146,14 @@ def run_comparison(document_path: str):
     print("=" * 70)
     print(f"{'Strategy':<25} {'Chunks':<10} {'Avg Tokens':<15} {'Total Tokens':<15}")
     print("-" * 70)
-    print(f"{'No overlap':<25} {stats_no_overlap.chunk_count:<10} {stats_no_overlap.avg_token_count:<15.1f} {stats_no_overlap.total_tokens:<15}")
-    print(f"{'{overlap}-token overlap':<25} {stats_with_overlap.chunk_count:<10} {stats_with_overlap.avg_token_count:<15.1f} {stats_with_overlap.total_tokens:<15}".format(overlap=overlap))
+    print(
+        f"{'No overlap':<25} {stats_no_overlap.chunk_count:<10} {stats_no_overlap.avg_token_count:<15.1f} {stats_no_overlap.total_tokens:<15}"
+    )
+    print(
+        f"{'{overlap}-token overlap':<25} {stats_with_overlap.chunk_count:<10} {stats_with_overlap.avg_token_count:<15.1f} {stats_with_overlap.total_tokens:<15}".format(
+            overlap=overlap
+        )
+    )
     print()
 
     # Cost comparison
@@ -158,7 +164,9 @@ def run_comparison(document_path: str):
     additional_tokens = stats_with_overlap.total_tokens - stats_no_overlap.total_tokens
     print(f"Additional chunks with overlap: {additional_chunks}")
     print(f"Additional tokens with overlap: {additional_tokens}")
-    print(f"Percentage increase in tokens: {additional_tokens / stats_no_overlap.total_tokens * 100:.1f}%")
+    print(
+        f"Percentage increase in tokens: {additional_tokens / stats_no_overlap.total_tokens * 100:.1f}%"
+    )
     print()
     print("Trade-off: Overlap increases storage and retrieval cost by adding")
     print("repeated tokens, but improves context preservation across boundaries.")
@@ -216,14 +224,14 @@ def main():
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Token-Aware Chunking Comparison\n\n")
         f.write("## Configuration\n\n")
-        f.write(f"- Chunk size: 400 tokens\n")
-        f.write(f"- Overlap: 60 tokens\n")
-        f.write(f"- Overlap percentage: 15.0%\n")
-        f.write(f"- Tokenizer: cl100k_base\n\n")
+        f.write("- Chunk size: 400 tokens\n")
+        f.write("- Overlap: 60 tokens\n")
+        f.write("- Overlap percentage: 15.0%\n")
+        f.write("- Tokenizer: cl100k_base\n\n")
 
         f.write("## Chunk Statistics\n\n")
-        f.write(f"| Strategy | Chunks | Avg Tokens | Min Tokens | Max Tokens | Total Tokens |\n")
-        f.write(f"|----------|--------|------------|------------|------------|--------------|\n")
+        f.write("| Strategy | Chunks | Avg Tokens | Min Tokens | Max Tokens | Total Tokens |\n")
+        f.write("|----------|--------|------------|------------|------------|--------------|\n")
         f.write(
             f"| No overlap | {results['no_overlap'].chunk_count} | {results['no_overlap'].avg_token_count:.1f} | {results['no_overlap'].min_token_count} | {results['no_overlap'].max_token_count} | {results['no_overlap'].total_tokens} |\n"
         )
@@ -234,7 +242,9 @@ def main():
 
         f.write("## Cost Comparison\n\n")
         additional_chunks = results["with_overlap"].chunk_count - results["no_overlap"].chunk_count
-        additional_tokens = results["with_overlap"].total_tokens - results["no_overlap"].total_tokens
+        additional_tokens = (
+            results["with_overlap"].total_tokens - results["no_overlap"].total_tokens
+        )
         f.write(f"- Additional chunks with overlap: {additional_chunks}\n")
         f.write(f"- Additional tokens with overlap: {additional_tokens}\n")
         f.write(
@@ -252,12 +262,20 @@ def main():
             f.write(f"```\n{chunk.text}\n```\n\n")
 
         if len(results["chunks_with_overlap"]) > sample_count:
-            f.write(f"... ({len(results['chunks_with_overlap']) - sample_count} additional chunks omitted)\n\n")
+            f.write(
+                f"... ({len(results['chunks_with_overlap']) - sample_count} additional chunks omitted)\n\n"
+            )
 
         f.write("## Boundary-Context Demonstration\n\n")
-        f.write("The demonstration shows how overlap preserves context across chunk boundaries.\n\n")
-        f.write("Without overlap, important information crossing the boundary is split between chunks.\n\n")
-        f.write("With overlap, the boundary context appears in both neighboring chunks, ensuring that critical information is preserved for retrieval.\n\n")
+        f.write(
+            "The demonstration shows how overlap preserves context across chunk boundaries.\n\n"
+        )
+        f.write(
+            "Without overlap, important information crossing the boundary is split between chunks.\n\n"
+        )
+        f.write(
+            "With overlap, the boundary context appears in both neighboring chunks, ensuring that critical information is preserved for retrieval.\n\n"
+        )
 
         f.write("## Context Window Considerations\n\n")
         f.write("Retrieved context roughly depends on:\n\n")
@@ -277,21 +295,35 @@ def main():
         f.write("### Chunk Size (400 tokens)\n\n")
         f.write("- Tokens are the model's actual unit rather than characters\n")
         f.write("- 400 tokens provides a reasonably sized retrieval unit\n")
-        f.write("- Multiple retrieved chunks can fit into a model context window together with the system prompt, user question, and answer\n")
+        f.write(
+            "- Multiple retrieved chunks can fit into a model context window together with the system prompt, user question, and answer\n"
+        )
         f.write("- Smaller chunks improve retrieval precision but may lose context\n")
-        f.write("- Larger chunks preserve more context but can reduce retrieval precision and increase token/embedding cost\n\n")
+        f.write(
+            "- Larger chunks preserve more context but can reduce retrieval precision and increase token/embedding cost\n\n"
+        )
 
         f.write("### Overlap (60 tokens)\n\n")
         f.write("- 60 tokens provides approximately 15% overlap\n")
         f.write("- Overlap helps preserve ideas that cross chunk boundaries\n")
-        f.write("- Too much overlap duplicates text and increases embedding/storage/retrieval cost\n")
+        f.write(
+            "- Too much overlap duplicates text and increases embedding/storage/retrieval cost\n"
+        )
         f.write("- Too little overlap increases the risk of losing boundary context\n\n")
 
         f.write("### HealthCompass Document Considerations\n\n")
-        f.write("- Public-health guidance documents often contain procedural instructions that span multiple sentences\n")
-        f.write("- Vaccination protocols include detailed dosing schedules that should not be split arbitrarily\n")
-        f.write("- Advisories and SOPs contain critical safety information that must be preserved across boundaries\n")
-        f.write("- Policy documents may have long sections that benefit from overlap to maintain context\n\n")
+        f.write(
+            "- Public-health guidance documents often contain procedural instructions that span multiple sentences\n"
+        )
+        f.write(
+            "- Vaccination protocols include detailed dosing schedules that should not be split arbitrarily\n"
+        )
+        f.write(
+            "- Advisories and SOPs contain critical safety information that must be preserved across boundaries\n"
+        )
+        f.write(
+            "- Policy documents may have long sections that benefit from overlap to maintain context\n\n"
+        )
 
     print(f"Report saved to: {report_path}")
 

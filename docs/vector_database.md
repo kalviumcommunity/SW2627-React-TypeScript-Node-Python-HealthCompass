@@ -54,8 +54,8 @@ Each record in the vector database contains:
         "chunk_id": "0",
         "section": "Introduction",
         "page_number": "1",
-        "document_type": "guidance"
-    }
+        "document_type": "guidance",
+    },
 }
 ```
 
@@ -140,8 +140,8 @@ record = VectorRecord(
         "chunk_id": "0",
         "section": "Introduction",
         "page_number": "1",
-        "document_type": "guidance"
-    }
+        "document_type": "guidance",
+    },
 )
 
 insert_record(collection, record)
@@ -300,7 +300,7 @@ collection.add(
     ids=[r.id for r in records],
     embeddings=[r.embedding for r in records],
     documents=[r.text for r in records],
-    metadatas=[r.metadata for r in records]
+    metadatas=[r.metadata for r in records],
 )
 ```
 

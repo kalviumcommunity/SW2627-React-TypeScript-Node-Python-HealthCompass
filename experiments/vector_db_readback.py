@@ -71,7 +71,9 @@ def main():
     print("Creating test record...")
     test_id = "test_record_001"
     test_embedding = create_test_embedding(config.embedding_dimension)
-    test_text = "This is a test vaccination guidance document for HealthCompass public health response."
+    test_text = (
+        "This is a test vaccination guidance document for HealthCompass public health response."
+    )
     test_metadata = {
         "source": "test_guidance.txt",
         "filename": "test_guidance.txt",
