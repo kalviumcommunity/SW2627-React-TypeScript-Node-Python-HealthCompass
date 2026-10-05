@@ -63,7 +63,7 @@ class TestEmbeddingConfig:
 
     def test_get_embedding_config_missing_api_key(self):
         """Test that missing API key raises EmbeddingError."""
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=True):
             with pytest.raises(
                 EmbeddingError, match="OPENAI_API_KEY environment variable is not set"
             ):

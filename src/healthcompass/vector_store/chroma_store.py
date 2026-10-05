@@ -134,10 +134,64 @@ def initialize_vector_store(
         )
 
         # Get or create collection
+        collection = None
         try:
             collection = client.get_collection(name=config.collection_name)
             print(f"Loaded existing collection: {config.collection_name}")
         except (chromadb.errors.NotFoundError, chromadb.errors.InvalidCollectionException):
+            pass  # Will create below
+
+        if collection is not None:
+            # Validate dimension compatibility
+            collection_metadata = collection.metadata or {}
+            stored_dimension = collection_metadata.get("embedding_dimension")
+            current_count = collection.count()
+
+            if stored_dimension is not None and stored_dimension != config.embedding_dimension:
+                if current_count == 0:
+                    # Empty collection with wrong dimension — safe to recreate for development
+                    print(
+                        f"[guidance] Dimension mismatch on empty collection '{config.collection_name}': "
+                        f"stored={stored_dimension}, expected={config.embedding_dimension}. "
+                        f"Recreating collection."
+                    )
+                    client.delete_collection(name=config.collection_name)
+                    collection = None  # Will create fresh below
+                else:
+                    # Non-empty collection with wrong dimension — fail clearly
+                    raise VectorStoreError(
+                        f"Embedding configuration mismatch: collection '{config.collection_name}' "
+                        f"uses {stored_dimension} dimensions ({current_count} vectors) but current "
+                        f"provider/model generates {config.embedding_dimension} dimensions. "
+                        f"Use the matching collection or rebuild the development index by deleting "
+                        f"the data/chroma_db directory."
+                    )
+
+            # Verify actual vector dimensions if collection has data
+            if collection is not None and current_count > 0:
+                sample = collection.get(limit=1, include=["embeddings"])
+                sample_embeddings = sample.get("embeddings")
+                if sample_embeddings is not None and len(sample_embeddings) > 0:
+                    actual_dimension = len(sample_embeddings[0])
+                    if actual_dimension != config.embedding_dimension:
+                        raise VectorStoreError(
+                            f"Embedding configuration mismatch: collection '{config.collection_name}' "
+                            f"contains vectors of dimension {actual_dimension} but current "
+                            f"provider/model generates {config.embedding_dimension} dimensions. "
+                            f"Use the matching collection or rebuild the development index."
+                        )
+
+            # Update metadata if dimension was not set
+            if collection is not None and stored_dimension is None:
+                try:
+                    safe_metadata = {k: v for k, v in collection_metadata.items() if not k.startswith("hnsw:")}
+                    safe_metadata["embedding_dimension"] = config.embedding_dimension
+                    collection.modify(metadata=safe_metadata)
+                except Exception:
+                    pass
+
+        # Create collection if it doesn't exist (or was recreated above)
+        if collection is None:
             collection = client.create_collection(
                 name=config.collection_name,
                 metadata={
@@ -149,34 +203,6 @@ def initialize_vector_store(
             )
             print(f"Created new collection: {config.collection_name}")
 
-        collection_metadata = collection.metadata or {}
-        stored_dimension = collection_metadata.get("embedding_dimension")
-        if stored_dimension is not None and stored_dimension != config.embedding_dimension:
-            raise VectorStoreError(
-                f"Collection dimension mismatch: expected {config.embedding_dimension}, "
-                f"found {stored_dimension}. Consider recreating the collection."
-            )
-
-        # Verify collection dimension matches expected
-        if collection.count() > 0:
-            # Get a sample record to verify dimension
-            sample = collection.get(limit=1, include=["embeddings"])
-            if len(sample["embeddings"]) > 0:
-                actual_dimension = len(sample["embeddings"][0])
-                if actual_dimension != config.embedding_dimension:
-                    raise VectorStoreError(
-                        f"Collection dimension mismatch: expected {config.embedding_dimension}, "
-                        f"found {actual_dimension}. Consider recreating the collection."
-                    )
-
-        if stored_dimension is None:
-            try:
-                safe_metadata = {k: v for k, v in collection_metadata.items() if not k.startswith("hnsw:")}
-                safe_metadata["embedding_dimension"] = config.embedding_dimension
-                collection.modify(metadata=safe_metadata)
-            except Exception:
-                pass
-
         print(f"Vector database initialized at: {config.db_path}")
         print(f"Collection: {config.collection_name}")
         print(f"Embedding dimension: {config.embedding_dimension}")
@@ -184,6 +210,8 @@ def initialize_vector_store(
 
         return collection
 
+    except VectorStoreError:
+        raise
     except Exception as e:
         raise VectorStoreError(f"Failed to initialize vector store: {e}") from e
 
@@ -261,7 +289,18 @@ def upsert_records(
     for start in range(0, expected_count, batch_size):
         batch = records[start : start + batch_size]
         try:
+            # Defensive validation before Chroma upsert
             for record in batch:
+                if not isinstance(record.embedding, list):
+                    raise VectorStoreError(
+                        "Embedding must be a Python list of floats"
+                    )
+                if not record.embedding:
+                    raise VectorStoreError("Embedding vector cannot be empty")
+                if not all(isinstance(x, (int, float)) for x in record.embedding):
+                    raise VectorStoreError(
+                        "Embedding vector contains non-numeric values"
+                    )
                 if expected_dimension is not None and len(record.embedding) != expected_dimension:
                     raise VectorStoreError(
                         f"Vector dimension mismatch: expected {expected_dimension}, "

@@ -103,8 +103,12 @@ class GuidanceUploadResponse(BaseModel):
 
     success: bool
     message: str
-    document: dict[str, Any]
-    chunks_indexed: int
+    document_id: Optional[str] = None
+    status: Optional[str] = None
+    chunk_count: Optional[int] = None
+    chunks_indexed: int = 0
+    document: Optional[dict[str, Any]] = None
+    detail: Optional[str] = None
 
 
 class AlertItem(BaseModel):
@@ -309,39 +313,74 @@ async def upload_guidance(
 ):
     """Upload an official health guidance document (PDF, TXT, MD), process, and index it into ChromaDB."""
     try:
+        if not title or not title.strip():
+            raise HTTPException(status_code=400, detail="Document title is required.")
+        if not category or not category.strip():
+            raise HTTPException(status_code=400, detail="Category is required.")
+
         content = await file.read()
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        filename = file.filename or "uploaded_guidance.pdf"
+        from healthcompass.guidance_service import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file format '{suffix}'. Supported formats are: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            )
+
+        if len(content) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB.",
+            )
 
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
         doc = guidance_service.add_document(
             file_bytes=content,
-            filename=file.filename or "uploaded_guidance.pdf",
-            title=title,
-            category=category,
-            description=description,
-            region=region,
-            authority=authority,
-            version=version,
-            effective_date=effective_date,
+            filename=filename,
+            title=title.strip(),
+            category=category.strip(),
+            description=description.strip(),
+            region=region.strip() if region else "National",
+            authority=authority.strip() if authority else "National Public Health Authority",
+            version=version.strip() if version else "1.0",
+            effective_date=effective_date.strip() if effective_date else "",
             tags=tag_list,
         )
 
+        if doc.status == "failed":
+            raise HTTPException(
+                status_code=400,
+                detail=doc.error_message or "Failed to process and index document.",
+            )
+
         return GuidanceUploadResponse(
-            success=doc.status in {"active", "indexed"},
+            success=True,
             message=f"Guidance document '{doc.title}' uploaded and indexed successfully with {doc.chunk_count} knowledge chunks.",
-            document=doc.to_dict(),
+            document_id=doc.id,
+            status=doc.status,
+            chunk_count=doc.chunk_count,
             chunks_indexed=doc.chunk_count,
+            document=doc.to_dict(),
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to process and index document: {e}")
 
 
 @app.post("/api/guidance/{document_id}/archive")
+@app.post("/guidance/{document_id}/archive")
 def archive_guidance(document_id: str):
     """Archive a guidance document."""
     doc = guidance_service.archive_document(document_id)
@@ -351,12 +390,34 @@ def archive_guidance(document_id: str):
 
 
 @app.post("/api/guidance/{document_id}/reindex")
+@app.post("/guidance/{document_id}/reindex")
 def reindex_guidance(document_id: str):
     """Re-index an existing guidance document."""
-    doc = guidance_service.reindex_document(document_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found.")
-    return {"success": True, "message": f"Document '{doc.title}' re-indexed with {doc.chunk_count} chunks.", "document": doc.to_dict()}
+    try:
+        doc = guidance_service.reindex_document(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        if doc.status == "failed":
+            raise HTTPException(
+                status_code=400,
+                detail=doc.error_message or "Document re-indexing failed.",
+            )
+        return {
+            "success": True,
+            "message": f"Document '{doc.title}' re-indexed with {doc.chunk_count} chunks.",
+            "document_id": doc.id,
+            "status": doc.status,
+            "chunk_count": doc.chunk_count,
+            "document": doc.to_dict(),
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to re-index document: {e}")
 
 
 # ─── Ask HealthCompass RAG Endpoint ──────────────────────────────────
@@ -552,7 +613,16 @@ def ask_question(request: AskRequest):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+# ─── Updates Endpoints (stub for frontend compatibility) ─────────
+
+
+@app.get("/api/updates/unread/count")
+def get_unread_count():
+    """Return unread updates count. Stub endpoint for frontend AppShell compatibility."""
+    return {"count": 0}
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

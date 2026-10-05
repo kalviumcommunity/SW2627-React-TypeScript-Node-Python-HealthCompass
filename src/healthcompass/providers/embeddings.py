@@ -91,8 +91,10 @@ class LocalEmbeddingProvider(EmbeddingProvider):
             List of embedding vectors
         """
         self._load_model()
-        embeddings = self._model.encode(texts, convert_to_numpy=False)
-        return [list(emb) for emb in embeddings]
+        embeddings = self._model.encode(texts, convert_to_numpy=True)
+        if hasattr(embeddings, "tolist"):
+            return embeddings.tolist()
+        return [[float(x) for x in emb] for emb in embeddings]
 
     def embed_query(self, text: str) -> List[float]:
         """Generate embedding for a query using local model.
@@ -104,8 +106,10 @@ class LocalEmbeddingProvider(EmbeddingProvider):
             Embedding vector
         """
         self._load_model()
-        embedding = self._model.encode(text, convert_to_numpy=False)
-        return list(embedding)
+        embedding = self._model.encode(text, convert_to_numpy=True)
+        if hasattr(embedding, "tolist"):
+            return embedding.tolist()
+        return [float(x) for x in embedding]
 
     def get_model_name(self) -> str:
         """Get the model name."""
@@ -159,11 +163,15 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             texts: List of text strings to embed
 
         Returns:
-            List of embedding vectors
+            List of embedding vectors as plain Python lists of floats
         """
         self._load_client()
         response = self._client.embeddings.create(input=texts, model=self.model)
-        return [embedding.embedding for embedding in response.data]
+        # Ensure each embedding is a plain list of floats
+        return [
+            [float(v) for v in embedding.embedding]
+            for embedding in response.data
+        ]
 
     def embed_query(self, text: str) -> List[float]:
         """Generate embedding for a query using OpenAI.
@@ -172,7 +180,11 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             text: Query text to embed
 
         Returns:
-            Embedding vector
+            Embedding vector as plain Python list of floats
+        """
+        self._load_client()
+        response = self._client.embeddings.create(input=[text], model=self.model)
+        return [float(v) for v in response.data[0].embedding]
         """
         self._load_client()
         response = self._client.embeddings.create(input=[text], model=self.model)
