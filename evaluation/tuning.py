@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from healthcompass.vector_store import (
-    RetrievalResult as VectorRetrievalResult,
     initialize_vector_store,
     retrieve,
 )
@@ -127,7 +126,7 @@ def evaluate_single_query(
                 collection=collection,
                 k=config.k,
             )
-        except Exception as e:
+        except Exception:
             # If API call fails, return empty result
             return QueryEvaluationResult(
                 query=query.query,
@@ -325,8 +324,8 @@ def save_evaluation_results(
 
         f.write("## Dataset\n\n")
         f.write(f"- **Number of queries:** {evaluations[0].total_queries}\n")
-        f.write(f"- **Expected source methodology:** Source document matching\n")
-        f.write(f"- **Keyword matching:** Fallback when source not found\n\n")
+        f.write("- **Expected source methodology:** Source document matching\n")
+        f.write("- **Keyword matching:** Fallback when source not found\n\n")
 
         f.write("## Configuration Comparison\n\n")
         f.write("| Configuration | k | Top-1 Hit Rate | Top-k Hit Rate | Average Rank |\n")
@@ -343,12 +342,12 @@ def save_evaluation_results(
 
         for eval_result in evaluations:
             f.write(f"### {eval_result.config_name}\n\n")
-            f.write(f"**Settings:**\n")
+            f.write("**Settings:**\n")
             f.write(f"- k: {eval_result.k}\n")
             f.write(f"- Score threshold: {eval_result.score_threshold}\n")
             f.write(f"- Metadata filter: {eval_result.metadata_filter}\n\n")
 
-            f.write(f"**Performance:**\n")
+            f.write("**Performance:**\n")
             f.write(f"- Top-1 hits: {eval_result.top_1_hits}/{eval_result.total_queries}\n")
             f.write(f"- Top-k hits: {eval_result.top_k_hits}/{eval_result.total_queries}\n")
             f.write(f"- Top-1 hit rate: {eval_result.top_1_hit_rate:.1%}\n")
@@ -380,9 +379,11 @@ def save_evaluation_results(
         f.write(f"Selected based on highest top-k hit rate ({best_config.top_k_hit_rate:.1%}) ")
         f.write(f"and top-1 hit rate ({best_config.top_1_hit_rate:.1%}). ")
         if best_config.k > 1:
-            f.write(f"Configuration with k={best_config.k} provides better recall while maintaining reasonable context size.\n")
+            f.write(
+                f"Configuration with k={best_config.k} provides better recall while maintaining reasonable context size.\n"
+            )
         else:
-            f.write(f"Minimal k for focused retrieval.\n")
+            f.write("Minimal k for focused retrieval.\n")
 
         f.write("\n## Limitations\n\n")
         f.write("- Small evaluation dataset (8 queries)\n")

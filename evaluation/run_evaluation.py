@@ -53,7 +53,9 @@ def main():
 
     # Save results
     output_dir = Path(__file__).parent / "results"
-    json_path, md_path = save_evaluation_results(summary, output_dir, use_deterministic_embeddings=False)
+    json_path, md_path = save_evaluation_results(
+        summary, output_dir, use_deterministic_embeddings=False
+    )
 
     print("Results saved:")
     print(f"  JSON: {json_path}")

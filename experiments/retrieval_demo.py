@@ -84,7 +84,7 @@ def main():
     print()
 
     # Check if collection has records
-    if info['count'] == 0:
+    if info["count"] == 0:
         print("ERROR: Collection is empty. Please insert documents before running retrieval.")
         print("Run the vector_db_readback.py script to insert test records.")
         sys.exit(1)
@@ -112,9 +112,9 @@ def main():
         except Exception as e:
             if "OPENAI_API_KEY" in str(e):
                 api_available = False
-                print(f"API key not configured. Using mock data for demonstration.")
+                print("API key not configured. Using mock data for demonstration.")
                 # Generate mock results for demonstration based on available records
-                num_results = min(k, info['count'])
+                num_results = min(k, info["count"])
                 all_results[k] = [
                     RetrievalResult(
                         rank=i + 1,
@@ -128,11 +128,13 @@ def main():
                             "section": "Introduction",
                             "page_number": str(i + 1),
                             "document_type": "guidance",
-                        }
+                        },
                     )
                     for i in range(num_results)
                 ]
-                print(f"Generated {len(all_results[k])} mock results for k={k} (collection has {info['count']} records)")
+                print(
+                    f"Generated {len(all_results[k])} mock results for k={k} (collection has {info['count']} records)"
+                )
             else:
                 print(f"ERROR: Failed to retrieve results for k={k}: {e}")
                 all_results[k] = []
@@ -162,7 +164,9 @@ def main():
         f.write(f"**Embedding model:** {config.embedding_model}\n\n")
 
         if not api_available:
-            f.write("**Note:** API key not configured. Results are mock data for demonstration purposes.\n\n")
+            f.write(
+                "**Note:** API key not configured. Results are mock data for demonstration purposes.\n\n"
+            )
 
         f.write("## Collection Information\n\n")
         f.write(f"**Name:** {info['name']}\n")
@@ -172,7 +176,9 @@ def main():
 
         f.write("## Distance Score Explanation\n\n")
         f.write("The results use **cosine distance** as the similarity metric.\n\n")
-        f.write("- **Lower distance values** indicate higher similarity (closer in semantic space)\n")
+        f.write(
+            "- **Lower distance values** indicate higher similarity (closer in semantic space)\n"
+        )
         f.write("- Distance range: 0.0 (identical) to 2.0 (opposite) for normalized vectors\n")
         f.write("- A distance of 0.0 means the query and chunk are semantically identical\n")
         f.write("- A distance around 0.3-0.5 typically indicates strong semantic similarity\n\n")
@@ -203,7 +209,9 @@ def main():
         f.write("### Effect of k on Results\n\n")
         f.write("- **k=1**: Returns the single most similar chunk. Fast, minimal context.\n")
         f.write("- **k=3**: Returns top 3 chunks. Balances context size and noise.\n")
-        f.write("- **k=5**: Returns top 5 chunks. More context, but may include less relevant chunks.\n\n")
+        f.write(
+            "- **k=5**: Returns top 5 chunks. More context, but may include less relevant chunks.\n\n"
+        )
 
         f.write("### Trade-offs\n\n")
         f.write("- **Context Size**: Higher k provides more context for LLM generation\n")

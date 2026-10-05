@@ -36,9 +36,10 @@ def temp_db_path():
     try:
         import shutil
         import time
+
         time.sleep(0.5)  # Give ChromaDB time to release file handles
         shutil.rmtree(temp_dir, ignore_errors=True)
-    except:
+    except OSError:
         pass  # Cleanup errors are acceptable
 
 
@@ -149,13 +150,15 @@ def test_initialize_vector_store_loads_existing_collection(test_config):
     assert collection2.count() == 1
 
 
-@pytest.mark.skip(reason="ChromaDB creates directory during initialization, not testable separately")
+@pytest.mark.skip(
+    reason="ChromaDB creates directory during initialization, not testable separately"
+)
 def test_initialize_vector_store_creates_directory(test_config):
     """Test that initialization creates the database directory."""
     db_dir = Path(test_config.db_path)
     assert not db_dir.exists()
 
-    collection = initialize_vector_store(test_config)
+    initialize_vector_store(test_config)
     assert db_dir.exists()
     assert db_dir.is_dir()
 
@@ -290,11 +293,13 @@ def test_existing_records_not_deleted(test_config, test_record):
 
 def test_health_check_success(test_config):
     """Test that health check returns True for healthy database."""
-    collection = initialize_vector_store(test_config)
+    initialize_vector_store(test_config)
     assert health_check(test_config, verbose=False) is True
 
 
-@pytest.mark.skip(reason="ChromaDB creates directories automatically, making invalid path test unreliable")
+@pytest.mark.skip(
+    reason="ChromaDB creates directories automatically, making invalid path test unreliable"
+)
 def test_health_check_invalid_path():
     """Test that health check returns False for invalid path."""
     bad_config = VectorStoreConfig(
@@ -393,7 +398,10 @@ def test_upsert_records_batches_and_preserves_record_data(test_config):
         assert stored is not None
         assert list(stored.embedding) == pytest.approx(record.embedding)
         assert stored.text == record.text
-        assert stored.metadata == {"source": "guidance.txt", "chunk_index": record.metadata["chunk_index"]}
+        assert stored.metadata == {
+            "source": "guidance.txt",
+            "chunk_index": record.metadata["chunk_index"],
+        }
 
     repeated = upsert_records(collection, records, batch_size=2)
     assert repeated.upserted_count == 3
@@ -534,7 +542,9 @@ def test_embed_query_uses_configured_model():
         mock_client.embeddings.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
-        with patch.dict(os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}):
+        with patch.dict(
+            os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}
+        ):
             result = embed_query("test query")
             assert len(result) == 3
             mock_client.embeddings.create.assert_called_once()
@@ -545,7 +555,9 @@ def test_embed_query_uses_configured_model():
 def test_embed_query_missing_api_key():
     """Test that missing API key raises clear error."""
     with patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(VectorStoreError, match="OPENAI_API_KEY environment variable is not set"):
+        with pytest.raises(
+            VectorStoreError, match="OPENAI_API_KEY environment variable is not set"
+        ):
             embed_query("test query")
 
 

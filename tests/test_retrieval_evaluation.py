@@ -174,9 +174,7 @@ class TestQueryLabel:
 
     def test_query_label_optional_fields(self):
         """Test QueryLabel with optional fields omitted."""
-        label = QueryLabel(
-            query="test query", relevant_chunk_ids=["chunk_1"]
-        )
+        label = QueryLabel(query="test query", relevant_chunk_ids=["chunk_1"])
         assert label.query == "test query"
         assert label.relevant_chunk_ids == ["chunk_1"]
         assert label.relevant_source is None

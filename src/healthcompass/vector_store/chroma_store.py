@@ -128,7 +128,7 @@ def initialize_vector_store(
         try:
             collection = client.get_collection(name=config.collection_name)
             print(f"Loaded existing collection: {config.collection_name}")
-        except:
+        except (chromadb.errors.NotFoundError, chromadb.errors.InvalidCollectionException):
             collection = client.create_collection(
                 name=config.collection_name,
                 metadata={
@@ -176,7 +176,7 @@ def initialize_vector_store(
         return collection
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to initialize vector store: {e}")
+        raise VectorStoreError(f"Failed to initialize vector store: {e}") from e
 
 
 def insert_record(
@@ -223,7 +223,7 @@ def insert_record(
         return record.id
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to insert record: {e}")
+        raise VectorStoreError(f"Failed to insert record: {e}") from e
 
 
 def upsert_records(
@@ -311,7 +311,7 @@ def get_record(
         )
 
     except Exception as e:
-        raise VectorStoreError(f"Failed to retrieve record: {e}")
+        raise VectorStoreError(f"Failed to retrieve record: {e}") from e
 
 
 def health_check(config: Optional[VectorStoreConfig] = None, verbose: bool = True) -> bool:
@@ -364,7 +364,7 @@ def get_collection_info(collection: chromadb.Collection) -> Dict[str, Any]:
             "metadata": collection.metadata,
         }
     except Exception as e:
-        raise VectorStoreError(f"Failed to get collection info: {e}")
+        raise VectorStoreError(f"Failed to get collection info: {e}") from e
 
 
 def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
@@ -397,11 +397,11 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
         response = client.embeddings.create(input=[query], model=embedding_model)
         return response.data[0].embedding
     except openai.RateLimitError as e:
-        raise VectorStoreError(f"Rate limit error during query embedding: {e}")
+        raise VectorStoreError(f"Rate limit error during query embedding: {e}") from e
     except openai.APIError as e:
-        raise VectorStoreError(f"API error during query embedding: {e}")
+        raise VectorStoreError(f"API error during query embedding: {e}") from e
     except Exception as e:
-        raise VectorStoreError(f"Failed to embed query: {e}")
+        raise VectorStoreError(f"Failed to embed query: {e}") from e
 
 
 def retrieve(
@@ -459,4 +459,4 @@ def retrieve(
     except VectorStoreError:
         raise
     except Exception as e:
-        raise VectorStoreError(f"Failed to retrieve results: {e}")
+        raise VectorStoreError(f"Failed to retrieve results: {e}") from e

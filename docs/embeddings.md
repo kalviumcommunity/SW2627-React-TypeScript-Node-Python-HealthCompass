@@ -52,13 +52,9 @@ Each embedded chunk stores:
     "source": "guideline.pdf",
     "filename": "guideline.pdf",
     "chunk_id": 0,
-    "metadata": {
-        "section": "Vaccination",
-        "version": "1.0",
-        "region": "District A"
-    },
+    "metadata": {"section": "Vaccination", "version": "1.0", "region": "District A"},
     "embedding": [0.0123, -0.0456, ...],
-    "embedding_model": "text-embedding-3-small"
+    "embedding_model": "text-embedding-3-small",
 }
 ```
 

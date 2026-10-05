@@ -100,9 +100,7 @@ def demonstrate_context_injection():
     small_budget = 300
     print(f"=== Token Budget Demonstration (max: {small_budget} tokens) ===\n")
 
-    assembly_result = assemble_context(
-        retrieved_chunks, max_context_tokens=small_budget
-    )
+    assembly_result = assemble_context(retrieved_chunks, max_context_tokens=small_budget)
 
     print(f"Retrieved chunks: {len(retrieved_chunks)}")
     print(f"Included chunks: {assembly_result.chunks_used}")
@@ -112,22 +110,20 @@ def demonstrate_context_injection():
 
     print("Sources used:")
     for source_info in assembly_result.sources_used:
-        print(
-            f"  [{source_info['rank']}] {source_info['source']}#{source_info['chunk_index']}"
-        )
+        print(f"  [{source_info['rank']}] {source_info['source']}#{source_info['chunk_index']}")
     print()
 
     if assembly_result.chunks_excluded > 0:
-        print(f"Excluded: {assembly_result.chunks_excluded} chunks because they exceeded the context budget.")
+        print(
+            f"Excluded: {assembly_result.chunks_excluded} chunks because they exceeded the context budget."
+        )
     print()
 
     # Demonstrate with normal token budget
     normal_budget = get_max_context_tokens()
     print(f"=== Normal Token Budget (max: {normal_budget} tokens) ===\n")
 
-    assembly_result_normal = assemble_context(
-        retrieved_chunks, max_context_tokens=normal_budget
-    )
+    assembly_result_normal = assemble_context(retrieved_chunks, max_context_tokens=normal_budget)
 
     print(f"Retrieved chunks: {len(retrieved_chunks)}")
     print(f"Included chunks: {assembly_result_normal.chunks_used}")
@@ -222,7 +218,9 @@ def save_demonstration_results(
 
         # Add note about deterministic embeddings if applicable
         if not os.getenv("OPENAI_API_KEY"):
-            f.write("**Note:** This demonstration used deterministic embeddings for testing without an API key.\n")
+            f.write(
+                "**Note:** This demonstration used deterministic embeddings for testing without an API key.\n"
+            )
             f.write("Retrieval results may not reflect actual semantic similarity.\n")
 
     print(f"Results saved to: {output_path}")

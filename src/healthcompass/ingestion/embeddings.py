@@ -339,11 +339,11 @@ def _call_embedding_api_with_retry(
                 )
                 time.sleep(wait_time)
             else:
-                raise EmbeddingError(f"Temporary error after {max_attempts} attempts: {e}")
+                raise EmbeddingError(f"Temporary error after {max_attempts} attempts: {e}") from e
 
         except openai.APIError as e:
             # Don't retry on permanent API errors
-            raise EmbeddingError(f"Permanent API error: {e}")
+            raise EmbeddingError(f"Permanent API error: {e}") from e
 
         except Exception as e:
             # For testing purposes, treat generic exceptions as retryable
@@ -355,7 +355,7 @@ def _call_embedding_api_with_retry(
                 )
                 time.sleep(wait_time)
             else:
-                raise EmbeddingError(f"Unexpected error during embedding API call: {e}")
+                raise EmbeddingError(f"Unexpected error during embedding API call: {e}") from e
 
     raise EmbeddingError(f"Failed to complete embedding after {max_attempts} attempts")
 
@@ -477,7 +477,7 @@ def generate_embeddings(
                     )
 
                 # Match embeddings to chunks
-                for chunk, embedding in zip(batch, embeddings):
+                for chunk, embedding in zip(batch, embeddings, strict=True):
                     source_files.add(chunk.get("source", "unknown"))
                     embedded_chunks.append(
                         EmbeddedChunk(
@@ -559,7 +559,7 @@ def generate_embeddings(
     except EmbeddingError:
         raise
     except Exception as e:
-        raise EmbeddingError(f"Failed to generate embeddings: {e}")
+        raise EmbeddingError(f"Failed to generate embeddings: {e}") from e
 
 
 def validate_embeddings(
