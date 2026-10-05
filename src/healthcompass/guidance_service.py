@@ -16,12 +16,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, List, Optional
 
-from healthcompass.ingestion.basic_chunking import token_chunks
-from healthcompass.ingestion.cleaning import clean_page
-from healthcompass.ingestion.embeddings import generate_embeddings
-from healthcompass.ingestion.indexing import index_embedded_chunks
-from healthcompass.ingestion.loader import load_document
-from healthcompass.ingestion.metadata import tag_chunks
+from healthcompass.indexing_service import index_guidance_document, IndexingError
 from healthcompass.vector_store import initialize_vector_store
 
 DOCUMENTS_DIR = Path("data/documents")
@@ -46,12 +41,16 @@ class GuidanceDocument:
     authority: str
     version: str
     effective_date: str
-    status: str  # 'active', 'processing', 'indexed', 'failed', 'archived'
+    status: str  # 'processing', 'indexed', 'failed', 'archived'
     chunk_count: int = 0
     page_count: int = 1
     tags: List[str] = field(default_factory=list)
     file_hash: str = ""
     embedding_provider: str = "local"
+    embedding_model: str = ""
+    vector_dimension: int = 0
+    indexed_at: str = ""
+    processing_time_ms: float = 0.0
     created_at: str = ""
     updated_at: str = ""
     error_message: Optional[str] = None
@@ -192,7 +191,7 @@ class GuidanceService:
                 title=item["title"],
                 description=item["description"],
                 filename=item["filename"],
-                file_path=str(file_path.relative_to(Path("."))),
+                file_path=str(file_path.relative_to(Path("."))) if file_path.is_relative_to(Path(".")) else str(file_path),
                 file_size=len(content),
                 mime_type="text/plain",
                 category=item["category"],
@@ -200,8 +199,8 @@ class GuidanceService:
                 authority=item["authority"],
                 version=item["version"],
                 effective_date=item["effective_date"],
-                status="indexed",
-                chunk_count=3,
+                status="processing",
+                chunk_count=0,
                 page_count=1,
                 tags=item["tags"],
                 file_hash=sha256(content).hexdigest(),
@@ -213,13 +212,23 @@ class GuidanceService:
 
         self._save_registry(seeded_docs)
 
-        # Index seeded docs into ChromaDB vector store
+        # Index seeded docs into ChromaDB vector store using canonical pipeline
         try:
             collection = initialize_vector_store()
             for doc in seeded_docs:
-                self._index_file_chunks(collection, doc, Path(doc.file_path))
+                try:
+                    index_guidance_document(doc, Path(doc.file_path), collection=collection)
+                except Exception as e:
+                    print(f"Warning: Failed to index seeded doc '{doc.title}': {e}")
+                    doc.status = "failed"
+                    doc.error_message = str(e)
+            self._save_registry(seeded_docs)
         except Exception as e:
-            print(f"Warning: Failed to index seeded docs into ChromaDB: {e}")
+            print(f"Warning: Failed to initialize vector store for seeded docs: {e}")
+            for doc in seeded_docs:
+                doc.status = "failed"
+                doc.error_message = f"Vector store initialization failed: {e}"
+            self._save_registry(seeded_docs)
 
     def list_documents(
         self,
@@ -273,6 +282,12 @@ class GuidanceService:
                 return doc
         return None
 
+    def _update_document_in_registry(self, doc: GuidanceDocument) -> None:
+        """Update or insert a document record in the registry file."""
+        docs = [d for d in self._load_registry() if d.id != doc.id]
+        docs.append(doc)
+        self._save_registry(docs)
+
     def add_document(
         self,
         file_bytes: bytes,
@@ -287,7 +302,12 @@ class GuidanceService:
         tags: Optional[List[str]] = None,
     ) -> GuidanceDocument:
         """Save document file, create registry entry, and index into ChromaDB."""
-        # 1. Validate file extension
+        # 1. Validate inputs
+        if not title or not title.strip():
+            raise ValueError("Document title is required.")
+        if not category or not category.strip():
+            raise ValueError("Category is required.")
+
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
             raise ValueError(
@@ -334,101 +354,20 @@ class GuidanceService:
             updated_at=now_str,
         )
 
-        # Save record with 'processing' state
-        docs = [d for d in self._load_registry() if d.id != doc.id]
-        docs.append(doc)
-        self._save_registry(docs)
+        # Save record with 'processing' state before indexing starts
+        self._update_document_in_registry(doc)
 
-        # 5. Ingest and Index
+        # 5. Ingest and Index via canonical indexing service
         try:
-            collection = initialize_vector_store()
-            chunk_count, page_count = self._index_file_chunks(collection, doc, target_path)
-            doc.status = "active"
-            doc.chunk_count = chunk_count
-            doc.page_count = page_count
-            doc.error_message = None
+            index_guidance_document(doc, target_path)
         except Exception as e:
             doc.status = "failed"
             doc.error_message = str(e)
-            print(f"Error indexing document {doc.id}: {e}")
+            doc.updated_at = datetime.now(timezone.utc).isoformat()
 
-        doc.updated_at = datetime.now(timezone.utc).isoformat()
-
-        # Update registry
-        docs = [d for d in self._load_registry() if d.id != doc.id]
-        docs.append(doc)
-        self._save_registry(docs)
+        # Update registry with final state (indexed or failed)
+        self._update_document_in_registry(doc)
         return doc
-
-    def _index_file_chunks(
-        self,
-        collection: Any,
-        doc: GuidanceDocument,
-        file_path: Path,
-    ) -> tuple[int, int]:
-        """Extract pages, clean, tokenize, embed, and index into ChromaDB."""
-        # Load document
-        pages = load_document(
-            file_path,
-            metadata={
-                "document_id": doc.id,
-                "document_title": doc.title,
-                "category": doc.category,
-                "region": doc.region,
-                "authority": doc.authority,
-                "version": doc.version,
-            },
-        )
-
-        all_chunks: List[dict[str, Any]] = []
-        for page in pages:
-            cleaned = clean_page(page)
-            tokenized = token_chunks(
-                cleaned.text,
-                source=cleaned.source,
-                filename=cleaned.filename,
-                size=400,
-                overlap=60,
-                metadata=cleaned.metadata,
-            )
-            tagged = tag_chunks(
-                cleaned.filename,
-                [chunk.text for chunk in tokenized],
-                metadata={
-                    **cleaned.metadata,
-                    "document_id": doc.id,
-                    "document_title": doc.title,
-                    "page_number": str(cleaned.page_number or 1),
-                    "category": doc.category,
-                    "region": doc.region,
-                    "authority": doc.authority,
-                    "version": doc.version,
-                },
-            )
-            for record, chunk in zip(tagged, tokenized, strict=True):
-                record["metadata"].update(
-                    chunk_id=str(chunk.chunk_id),
-                    token_count=chunk.token_count,
-                    document_id=doc.id,
-                    document_title=doc.title,
-                    category=doc.category,
-                    region=doc.region,
-                    authority=doc.authority,
-                    version=doc.version,
-                    page_number=str(cleaned.page_number or 1),
-                )
-            all_chunks.extend(tagged)
-
-        if not all_chunks:
-            return 0, len(pages)
-
-        # Generate embeddings
-        result, summary = generate_embeddings(all_chunks, skip_existing=False)
-
-        # Index in ChromaDB
-        index_embedded_chunks(collection, result.embedded_chunks)
-
-        return len(result.embedded_chunks), max(len(pages), 1)
 
     def archive_document(self, document_id: str) -> Optional[GuidanceDocument]:
         """Mark document as archived."""
@@ -453,18 +392,25 @@ class GuidanceService:
         file_path = Path(doc.file_path)
         if not file_path.exists():
             doc.status = "failed"
-            doc.error_message = "File not found on storage"
+            doc.error_message = f"Document file not found on disk: {doc.file_path}"
+            doc.updated_at = datetime.now(timezone.utc).isoformat()
+            self._update_document_in_registry(doc)
             return doc
 
-        collection = initialize_vector_store()
-        chunk_count, page_count = self._index_file_chunks(collection, doc, file_path)
-        doc.status = "active"
-        doc.chunk_count = chunk_count
-        doc.page_count = page_count
+        # Mark as processing
+        doc.status = "processing"
         doc.error_message = None
         doc.updated_at = datetime.now(timezone.utc).isoformat()
+        self._update_document_in_registry(doc)
 
-        docs = [d for d in self._load_registry() if d.id != doc.id]
-        docs.append(doc)
-        self._save_registry(docs)
+        # Ingest and Index via canonical indexing service
+        try:
+            index_guidance_document(doc, file_path)
+        except Exception as e:
+            doc.status = "failed"
+            doc.error_message = str(e)
+            doc.updated_at = datetime.now(timezone.utc).isoformat()
+
+        # Save final state in registry
+        self._update_document_in_registry(doc)
         return doc

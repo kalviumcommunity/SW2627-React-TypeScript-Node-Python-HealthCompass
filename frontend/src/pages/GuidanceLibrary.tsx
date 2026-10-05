@@ -85,6 +85,7 @@ function UploadModal({
   const [effectiveDate, setEffectiveDate] = useState('');
   const [tags, setTags] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'indexed' | 'failed'>('idle');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
@@ -111,7 +112,9 @@ function UploadModal({
     if (!file || !title.trim()) return;
 
     setUploading(true);
+    setUploadPhase('processing');
     setUploadError(null);
+    setUploadSuccess(null);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -130,18 +133,27 @@ function UploadModal({
         body: formData,
       });
 
+      const body = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ detail: 'Upload failed' }));
-        throw new Error(body.detail || 'Upload failed');
+        setUploadPhase('failed');
+        throw new Error(body.detail || body.message || `Upload failed (${res.status})`);
       }
 
-      const result = await res.json();
-      setUploadSuccess(result.message || 'Document uploaded and indexed successfully.');
+      if (body.status === 'indexed' || body.success) {
+        setUploadPhase('indexed');
+        setUploadSuccess(body.message || `Guidance document '${title}' uploaded and indexed successfully.`);
+      } else {
+        setUploadPhase('processing');
+        setUploadSuccess('Document uploaded. Processing in background...');
+      }
+
       setTimeout(() => {
         onSuccess();
         onClose();
       }, 1500);
     } catch (err) {
+      setUploadPhase('failed');
       setUploadError(err instanceof Error ? err.message : 'Failed to upload document');
     } finally {
       setUploading(false);
@@ -371,6 +383,7 @@ function DocumentDetailModal({
   onViewFile,
   onReindex,
   onArchive,
+  actionLoading,
 }: {
   doc: GuidanceDocument;
   onClose: () => void;
@@ -378,6 +391,7 @@ function DocumentDetailModal({
   onViewFile: (id: string) => void;
   onReindex: (id: string) => void;
   onArchive: (id: string) => void;
+  actionLoading?: string | null;
 }) {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -435,10 +449,27 @@ function DocumentDetailModal({
           )}
 
           {/* Error */}
-          {doc.error_message && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{doc.error_message}</p>
+          {(doc.status === 'failed' || doc.error_message) && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-red-800">Indexing Failed</p>
+                  <p className="text-xs text-red-700 mt-0.5">{doc.error_message || 'Document processing or indexing failed.'}</p>
+                  <button
+                    onClick={() => onReindex(doc.id)}
+                    disabled={actionLoading === doc.id}
+                    className="mt-2.5 px-3 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    {actionLoading === doc.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    {actionLoading === doc.id ? 'Re-indexing...' : 'Retry Indexing'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -514,11 +545,16 @@ function DocumentDetailModal({
           <div className="flex items-center gap-2">
             <button
               onClick={() => onReindex(doc.id)}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+              disabled={actionLoading === doc.id}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-button hover:bg-gray-200 disabled:opacity-50 transition-colors flex items-center gap-1.5"
               title="Re-index this document"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Re-index
+              {actionLoading === doc.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              {actionLoading === doc.id ? 'Re-indexing...' : doc.status === 'failed' ? 'Retry Indexing' : 'Re-index'}
             </button>
             {doc.status !== 'archived' && (
               <button
@@ -550,7 +586,6 @@ function GuidanceLibrary() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<GuidanceDocument | null>(null);
   const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
-  const [_actionLoading, setActionLoading] = useState<string | null>(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -605,15 +640,30 @@ function GuidanceLibrary() {
     window.open(`${API_URL}/api/guidance/${docId}/file`, '_blank');
   };
 
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const handleReindex = async (docId: string) => {
     setActionLoading(docId);
+    setActionError(null);
     try {
       const res = await fetch(`${API_URL}/api/guidance/${docId}/reindex`, { method: 'POST' });
-      if (!res.ok) throw new Error('Re-index failed');
-      loadDocuments();
-      setSelectedDoc(null);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          body.detail ||
+          body.message ||
+          `Re-index failed (${res.status})`
+        );
+      }
+      await loadDocuments();
+      if (selectedDoc?.id === docId && body.document) {
+        setSelectedDoc(body.document);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Re-index error:', err);
+      setActionError(err instanceof Error ? err.message : 'Re-index failed');
+      loadDocuments();
     } finally {
       setActionLoading(null);
     }
@@ -621,13 +671,18 @@ function GuidanceLibrary() {
 
   const handleArchive = async (docId: string) => {
     setActionLoading(docId);
+    setActionError(null);
     try {
       const res = await fetch(`${API_URL}/api/guidance/${docId}/archive`, { method: 'POST' });
-      if (!res.ok) throw new Error('Archive failed');
-      loadDocuments();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || body.message || `Archive failed (${res.status})`);
+      }
+      await loadDocuments();
       setSelectedDoc(null);
     } catch (err) {
-      console.error(err);
+      console.error('Archive error:', err);
+      setActionError(err instanceof Error ? err.message : 'Archive failed');
     } finally {
       setActionLoading(null);
     }
@@ -668,6 +723,26 @@ function GuidanceLibrary() {
           Add Guidance
         </button>
       </div>
+
+      {/* Action Error Alert Banner */}
+      {actionError && (
+        <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between animate-fade-in shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle className="h-4.5 w-4.5 text-red-600 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-red-800">Action Failed</p>
+              <p className="text-xs text-red-700 truncate">{actionError}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActionError(null)}
+            className="p-1 text-red-400 hover:text-red-600 rounded transition-colors ml-2 flex-shrink-0"
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="bg-white border border-gray-200 rounded-card shadow-card p-4 mb-6">
@@ -847,6 +922,45 @@ function GuidanceLibrary() {
                   {doc.region}
                 </p>
 
+                {/* Processing State Banner */}
+                {doc.status === 'processing' && (
+                  <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-md flex items-center gap-1.5 animate-pulse">
+                    <Loader2 className="h-3.5 w-3.5 text-amber-600 animate-spin flex-shrink-0" />
+                    <p className="text-[10px] text-amber-700 font-medium">Processing & Indexing Document...</p>
+                  </div>
+                )}
+
+                {/* Failed State Banner with Retry */}
+                {doc.status === 'failed' && (
+                  <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded-md">
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-semibold text-red-700">Indexing Failed</p>
+                        <p className="text-[10px] text-red-600 line-clamp-2" title={doc.error_message || 'Indexing failed'}>
+                          {doc.error_message || 'Document processing or indexing failed.'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReindex(doc.id);
+                        }}
+                        disabled={actionLoading === doc.id}
+                        className="px-2 py-0.5 text-[10px] font-medium bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors flex items-center gap-1 flex-shrink-0"
+                        title="Retry indexing"
+                      >
+                        {actionLoading === doc.id ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-2.5 w-2.5" />
+                        )}
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Description */}
                 <p className="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">{doc.description}</p>
 
@@ -904,6 +1018,7 @@ function GuidanceLibrary() {
           onViewFile={handleViewFile}
           onReindex={handleReindex}
           onArchive={handleArchive}
+          actionLoading={actionLoading}
         />
       )}
     </div>

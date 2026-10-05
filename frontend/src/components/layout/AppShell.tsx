@@ -28,10 +28,17 @@ function AppShell() {
   const location = useLocation();
 
   useEffect(() => {
-    // Load unread count
+    // Load unread count - gracefully handle 404 if endpoint not implemented
     getUnreadCount()
       .then((data) => setUnreadCount(data.count))
-      .catch(console.error);
+      .catch((err) => {
+        // If endpoint doesn't exist (404), treat as 0 unread
+        if (err?.status === 404 || err?.message?.includes('404')) {
+          setUnreadCount(0);
+        } else {
+          console.error('Failed to load unread count:', err);
+        }
+      });
   }, [location]); // Reload when location changes to update after reading
 
   return (

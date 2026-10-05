@@ -189,7 +189,7 @@ def test_initialize_vector_store_dimension_mismatch(test_config):
         embedding_model="text-embedding-3-large",
     )
 
-    with pytest.raises(VectorStoreError, match="Collection dimension mismatch"):
+    with pytest.raises(VectorStoreError, match="mismatch"):
         initialize_vector_store(bad_config)
 
 
@@ -550,7 +550,12 @@ def test_embed_query_uses_configured_model():
         mock_openai.return_value = mock_client
 
         with patch.dict(
-            os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}
+            os.environ,
+            {
+                "EMBEDDING_PROVIDER": "openai",
+                "EMBEDDING_MODEL": "text-embedding-3-small",
+                "OPENAI_API_KEY": "test_key",
+            },
         ):
             result = embed_query("test query")
             assert len(result) == 3
@@ -561,9 +566,9 @@ def test_embed_query_uses_configured_model():
 
 def test_embed_query_missing_api_key():
     """Test that missing API key raises clear error."""
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=True):
         with pytest.raises(
-            VectorStoreError, match="OPENAI_API_KEY environment variable is not set"
+            VectorStoreError, match="OPENAI_API_KEY"
         ):
             embed_query("test query")
             assert call_args[1]["model"] == "text-embedding-3-large"

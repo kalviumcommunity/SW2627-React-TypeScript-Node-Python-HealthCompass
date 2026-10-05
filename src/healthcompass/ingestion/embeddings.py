@@ -128,16 +128,11 @@ def get_embedding_config() -> tuple[str, str, int, int]:
     Raises:
         EmbeddingError: If configuration is invalid
     """
-    embedding_provider = os.getenv("EMBEDDING_PROVIDER")
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local").lower()
     batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
     max_retry_attempts = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
 
-    if embedding_provider is None:
-        if not os.getenv("OPENAI_API_KEY"):
-            raise EmbeddingError("OPENAI_API_KEY environment variable is not set")
-        embedding_provider = "openai"
-        model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    elif embedding_provider == "local":
+    if embedding_provider == "local":
         model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     elif embedding_provider == "openai":
         model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
@@ -487,15 +482,68 @@ def generate_embeddings(
                 # Use provider to generate embeddings
                 embeddings = provider.embed_documents(texts)
 
+                # Normalize embeddings to list[float]
+                normalized_embeddings = []
+                for embedding in embeddings:
+                    if isinstance(embedding, list):
+                        # Already a list, just ensure all values are float
+                        normalized = [float(v) for v in embedding]
+                    elif hasattr(embedding, 'tolist'):
+                        # numpy array or similar
+                        normalized = [float(v) for v in embedding.tolist()]
+                    else:
+                        # Try to convert to list
+                        normalized = [float(v) for v in list(embedding)]
+                    normalized_embeddings.append(normalized)
+
+                # Validate normalized embeddings
+                for idx, embedding in enumerate(normalized_embeddings):
+                    if not isinstance(embedding, list):
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} is not a list after normalization"
+                        )
+                    if not embedding:
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} is empty"
+                        )
+                    if not all(isinstance(v, (int, float)) for v in embedding):
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} contains non-numeric values"
+                        )
+
+                # Validate all embeddings have same dimension
+                if normalized_embeddings:
+                    first_dim = len(normalized_embeddings[0])
+                    for idx, embedding in enumerate(normalized_embeddings):
+                        if len(embedding) != first_dim:
+                            raise EmbeddingError(
+                                f"Embedding dimension mismatch: first embedding has dimension {first_dim}, "
+                                f"but embedding at index {idx} has dimension {len(embedding)}"
+                            )
+
                 # Validate response length
-                if len(embeddings) != len(batch):
+                if len(normalized_embeddings) != len(batch):
                     raise EmbeddingError(
-                        f"Provider returned {len(embeddings)} embeddings for {len(batch)} chunks"
+                        f"Provider returned {len(normalized_embeddings)} embeddings for {len(batch)} chunks"
                     )
 
                 # Match embeddings to chunks
-                for chunk, embedding in zip(batch, embeddings, strict=True):
-                    source_files.add(chunk.get("source", "unknown"))
+                for chunk, embedding in zip(batch, normalized_embeddings, strict=True):
+                    # Validate chunk structure
+                    if not isinstance(chunk, dict):
+                        raise EmbeddingError("Chunk must be a dictionary")
+                    if "text" not in chunk or not chunk["text"]:
+                        raise EmbeddingError("Chunk missing 'text' field or text is empty")
+                    if "source" not in chunk or not chunk["source"]:
+                        raise EmbeddingError("Chunk missing 'source' field or source is empty")
+                    if "filename" not in chunk or not chunk["filename"]:
+                        raise EmbeddingError("Chunk missing 'filename' field or filename is empty")
+                    if "chunk_id" not in chunk:
+                        raise EmbeddingError("Chunk missing 'chunk_id' field")
+                    if "metadata" not in chunk or not isinstance(chunk["metadata"], dict):
+                        raise EmbeddingError("Chunk missing 'metadata' field or metadata is not a dict")
+
+                    source_files.add(chunk["source"])
                     embedded_chunks.append(
                         EmbeddedChunk(
                             text=chunk["text"],

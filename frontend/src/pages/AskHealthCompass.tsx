@@ -58,88 +58,131 @@ function SourcePanel({
 }) {
   const activeSource = sources[activeSourceIdx];
 
+  // Clean document title - remove filesystem paths and technical IDs
+  const cleanTitle = (title: string, source: string) => {
+    // Prefer title if available and clean
+    if (title && !title.includes('\\') && !title.includes('/') && !title.includes('C:')) {
+      // Remove technical IDs like "d3a0d613" from end
+      return title.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    // Fallback to source, clean up path
+    if (source) {
+      const parts = source.split(/[/\\]/);
+      const filename = parts[parts.length - 1] || source;
+      return filename.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    return 'Document';
+  };
+
+  // Get relevance label based on distance
+  const getRelevanceLabel = (distance: number) => {
+    const score = 1 - distance;
+    if (score >= 0.7) return 'High relevance';
+    if (score >= 0.5) return 'Moderate relevance';
+    return 'Low relevance';
+  };
+
+  // Get relevance color
+  const getRelevanceColor = (distance: number) => {
+    const score = 1 - distance;
+    if (score >= 0.7) return 'bg-primary-500';
+    if (score >= 0.5) return 'bg-amber-400';
+    return 'bg-gray-400';
+  };
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-200">
-        <h3 className="text-sm font-semibold text-navy-900">Source Grounding</h3>
-        <p className="text-xs text-gray-400 mt-0.5">Official Protocol</p>
+    <div className="h-full flex flex-col bg-white border-l border-gray-200">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-200 bg-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-navy-900">Source Grounding</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {sources.length} source{sources.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Source tabs */}
+      {/* Source tabs - horizontally scrollable */}
       {sources.length > 1 && (
-        <div className="flex gap-1 px-4 pt-3 pb-1">
-          {sources.map((s, idx) => (
-            <button
-              key={s.chunkId}
-              onClick={() => onSourceSelect(idx)}
-              className={`text-[11px] px-2.5 py-1 rounded-button font-medium transition-colors ${
-                idx === activeSourceIdx
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-500 hover:bg-gray-100'
-              }`}
-              aria-label={`Source ${idx + 1}`}
-            >
-              Source {idx + 1}
-            </button>
-          ))}
+        <div className="border-b border-gray-200 bg-gray-50/50">
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto scrollbar-hide">
+            {sources.map((s, idx) => (
+              <button
+                key={s.chunkId}
+                onClick={() => onSourceSelect(idx)}
+                className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  idx === activeSourceIdx
+                    ? 'bg-primary-100 text-primary-700 border border-primary-200'
+                    : 'text-gray-500 hover:bg-gray-100 border border-transparent'
+                }`}
+                aria-label={`Source ${idx + 1}`}
+              >
+                {idx + 1}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Active source detail */}
       {activeSource && (
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Document info */}
-          <div className="bg-gray-50 rounded-card p-3">
-            <div className="flex items-start gap-2 mb-2">
-              <FileText className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-navy-900 leading-snug">
-                  {activeSource.title}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Document card */}
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <div className="flex items-start gap-2.5 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
+                <FileText className="h-4 w-4 text-primary-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-navy-900 leading-tight mb-1">
+                  {cleanTitle(activeSource.title, activeSource.source)}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">{activeSource.source}</p>
+                <p className="text-xs text-gray-500">Official Protocol</p>
               </div>
             </div>
-            <div className="space-y-1 ml-6">
-              <p className="text-xs text-gray-500">
-                <span className="text-gray-400">Ref:</span>{' '}
-                <span className="font-mono text-[11px]">{activeSource.chunkId}</span>
-              </p>
-              <p className="text-xs text-gray-500">
-                <span className="text-gray-400">Chunk:</span> {activeSource.chunkIndex}
-              </p>
-              <p className="text-xs text-gray-500">
-                <span className="text-gray-400">Rank:</span> #{activeSource.rank}
-              </p>
+            
+            {/* Metadata */}
+            <div className="flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-200">
+              <span className="flex items-center gap-1">
+                <span className="text-gray-400">Page</span>
+                {activeSource.chunkIndex}
+              </span>
+              <span className="text-gray-300">•</span>
+              <span className="flex items-center gap-1">
+                <span className="text-gray-400">Chunk</span>
+                {activeSource.chunkIndex}
+              </span>
+              <span className="text-gray-300">•</span>
+              <span className="flex items-center gap-1">
+                <span className="text-gray-400">Rank</span>
+                <span className="font-medium text-gray-700">#{activeSource.rank}</span>
+              </span>
             </div>
           </div>
 
           {/* Relevance */}
           <div>
-            <p className="text-xs text-gray-400 mb-1">Relevance</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                <div
-                  className={`h-1.5 rounded-full transition-all duration-500 ${
-                    (1 - activeSource.distance) >= 0.7
-                      ? 'bg-primary-500'
-                      : (1 - activeSource.distance) >= 0.5
-                      ? 'bg-amber-400'
-                      : 'bg-gray-400'
-                  }`}
-                  style={{ width: `${Math.max(10, (1 - activeSource.distance) * 100)}%` }}
-                />
-              </div>
-              <span className="text-[11px] font-medium text-gray-600">
-                {activeSource.relevanceLabel}
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs text-gray-400 font-medium">Relevance</p>
+              <span className="text-xs font-medium text-gray-600">
+                {getRelevanceLabel(activeSource.distance)}
               </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-500 ${getRelevanceColor(activeSource.distance)}`}
+                style={{ width: `${Math.max(10, (1 - activeSource.distance) * 100)}%` }}
+              />
             </div>
           </div>
 
-          {/* Excerpt */}
+          {/* Retrieved Excerpt */}
           {activeSource.excerpt && (
             <div>
-              <p className="text-xs text-gray-400 mb-1.5">Retrieved Excerpt</p>
-              <div className="bg-white border border-gray-200 rounded-card p-3">
+              <p className="text-xs text-gray-400 font-medium mb-2">Retrieved Excerpt</p>
+              <div className="bg-white border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
                 <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
                   {activeSource.excerpt}
                 </p>
@@ -150,7 +193,7 @@ function SourcePanel({
           {/* Open Document button */}
           <button
             onClick={() => onViewDocument(activeSource)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-sm text-gray-700 rounded-button hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-gray-300 text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Open Document
@@ -178,6 +221,22 @@ function DocumentModal({
     return () => document.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
+  // Clean document title - remove filesystem paths and technical IDs
+  const cleanTitle = (title: string, source: string) => {
+    // Prefer title if available and clean
+    if (title && !title.includes('\\') && !title.includes('/') && !title.includes('C:')) {
+      // Remove technical IDs like "d3a0d613" from end
+      return title.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    // Fallback to source, clean up path
+    if (source) {
+      const parts = source.split(/[/\\]/);
+      const filename = parts[parts.length - 1] || source;
+      return filename.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    return 'Document';
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
       <div
@@ -187,8 +246,10 @@ function DocumentModal({
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-navy-900 truncate">{source.title}</h3>
-            <p className="text-xs text-gray-500">{source.source}</p>
+            <h3 className="text-sm font-semibold text-navy-900 truncate">
+              {cleanTitle(source.title, source.source)}
+            </h3>
+            <p className="text-xs text-gray-500">Official Protocol</p>
           </div>
           <button
             onClick={onClose}
@@ -206,7 +267,7 @@ function DocumentModal({
               serving is implemented.
             </p>
           </div>
-          <div className="bg-gray-50 rounded-card p-4 border border-gray-100">
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
             <div className="flex items-baseline gap-2 mb-2">
               <span className="text-xs text-gray-400">Ref:</span>
               <span className="text-xs font-mono text-gray-500">{source.chunkId}</span>
@@ -219,7 +280,7 @@ function DocumentModal({
         <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-button hover:bg-gray-200 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
           >
             Close
           </button>
@@ -477,11 +538,27 @@ function AskHealthCompass() {
 
   const hasSources = response && response.sources.length > 0;
 
+  // Clean document title - remove filesystem paths and technical IDs
+  const cleanTitle = (title: string, source: string) => {
+    // Prefer title if available and clean
+    if (title && !title.includes('\\') && !title.includes('/') && !title.includes('C:')) {
+      // Remove technical IDs like "d3a0d613" from end
+      return title.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    // Fallback to source, clean up path
+    if (source) {
+      const parts = source.split(/[/\\]/);
+      const filename = parts[parts.length - 1] || source;
+      return filename.replace(/\s*[a-f0-9]{8,}(\.pdf)?$/i, '').replace(/\.pdf$/i, '');
+    }
+    return 'Document';
+  };
+
   return (
-    <div className="flex h-full animate-fade-in">
+    <div className="flex h-full flex-col lg:flex-row animate-fade-in">
       {/* ── Main Content ─────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6 lg:px-8">
+        <div className="max-w-3xl mx-auto px-6 py-6 lg:px-8 lg:max-w-4xl">
           {/* Header */}
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-navy-900 mb-0.5">Ask HealthCompass</h1>
@@ -684,7 +761,7 @@ function AskHealthCompass() {
                       <span className="inline-flex items-center justify-center w-3.5 h-3.5 text-[9px] font-semibold bg-primary-100 text-primary-700 rounded">
                         {idx + 1}
                       </span>
-                      {s.title}
+                      {cleanTitle(s.title, s.source)}
                     </span>
                   ))}
                 </div>
@@ -706,7 +783,7 @@ function AskHealthCompass() {
 
               {/* Mobile source panel */}
               {showMobileSources && hasSources && (
-                <div className="lg:hidden bg-white border border-gray-200 rounded-card shadow-card overflow-hidden animate-slide-up">
+                <div className="lg:hidden bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden animate-slide-up">
                   <SourcePanel
                     sources={response.sources}
                     activeSourceIdx={activeSourceIdx}
@@ -740,7 +817,7 @@ function AskHealthCompass() {
 
       {/* ── Source Panel (Desktop) ─────────────────────────── */}
       {hasSources && (
-        <div className="hidden lg:block w-80 border-l border-gray-200 bg-white overflow-hidden">
+        <div className="hidden lg:block w-[340px] border-l border-gray-200 bg-white overflow-hidden flex-shrink-0">
           <SourcePanel
             sources={response!.sources}
             activeSourceIdx={activeSourceIdx}
