@@ -185,10 +185,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self._load_client()
         response = self._client.embeddings.create(input=[text], model=self.model)
         return [float(v) for v in response.data[0].embedding]
-        """
-        self._load_client()
-        response = self._client.embeddings.create(input=[text], model=self.model)
-        return response.data[0].embedding
 
     def get_model_name(self) -> str:
         """Get the model name."""

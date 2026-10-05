@@ -64,7 +64,68 @@ async function apiCall<T>(
   return response.json();
 }
 
-// ─── Stats ───────────────────────────────────────────────────────
+// ─── Dashboard ───────────────────────────────────────────────────
+
+export interface DashboardMetrics {
+  totalGuidance: number;
+  indexedGuidance: number;
+  processingGuidance: number;
+  failedGuidance: number;
+  archivedGuidance: number;
+  recentUpdates: number;
+  criticalUpdates: number;
+  activeAlerts: number;
+}
+
+export interface GuidanceSummary {
+  id: string;
+  title: string;
+  category: string;
+  version: string;
+  authority: string;
+  region: string;
+  effectiveDate: string;
+  status: string;
+  indexedAt: string | null;
+}
+
+export interface UpdateSummary {
+  id: string;
+  title: string;
+  category: string;
+  severity: string;
+  previousVersion: string;
+  newVersion: string;
+  effectiveDate: string;
+  publishedAt: string;
+  isRead: boolean;
+}
+
+export interface CategoryCount {
+  category: string;
+  count: number;
+}
+
+export interface KnowledgeBaseHealth {
+  indexed: number;
+  processing: number;
+  failed: number;
+  archived: number;
+}
+
+export interface DashboardResponse {
+  metrics: DashboardMetrics;
+  recentGuidance: GuidanceSummary[];
+  recentUpdates: UpdateSummary[];
+  categoryCounts: CategoryCount[];
+  knowledgeBaseHealth: KnowledgeBaseHealth;
+}
+
+export async function getDashboard(): Promise<DashboardResponse> {
+  return apiCall<DashboardResponse>('/stats');
+}
+
+// ─── Stats (Legacy - deprecated, use getDashboard) ───────────
 
 export interface Stats {
   active_alerts: number;
