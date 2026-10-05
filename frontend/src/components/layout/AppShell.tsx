@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { getUnreadCount } from '../api/client';
+import { getUnreadCount } from '../../api/client';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
