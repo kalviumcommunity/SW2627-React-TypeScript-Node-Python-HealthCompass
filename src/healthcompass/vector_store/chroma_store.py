@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import chromadb
-import openai
 from chromadb.config import Settings
 from dotenv import load_dotenv
+
+from healthcompass.providers import get_embedding_provider
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -71,24 +72,31 @@ def get_vector_store_config() -> VectorStoreConfig:
         VectorStoreError: If configuration is invalid
     """
     db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
-    collection_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
 
-    # Vector dimensions for common embedding models
-    embedding_dimensions = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072,
-        "text-embedding-ada-002": 1536,
-    }
+    # Create provider-specific collection name to avoid mixing embedding spaces
+    base_collection_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
+    collection_name = f"{base_collection_name}_{embedding_provider}"
 
-    vector_dimension = embedding_dimensions.get(
-        embedding_model, 1536
-    )  # Default to 1536 for text-embedding-3-small
+    # Get embedding provider to determine dimension
+    try:
+        provider = get_embedding_provider()
+        embedding_model = provider.get_model_name()
+        embedding_dimension = provider.get_dimension()
+    except Exception as e:
+        # Fallback to defaults if provider initialization fails
+        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        embedding_dimensions = {
+            "text-embedding-3-small": 1536,
+            "text-embedding-3-large": 3072,
+            "text-embedding-ada-002": 1536,
+        }
+        embedding_dimension = embedding_dimensions.get(embedding_model, 1536)
 
     return VectorStoreConfig(
         db_path=db_path,
         collection_name=collection_name,
-        embedding_dimension=vector_dimension,
+        embedding_dimension=embedding_dimension,
         embedding_model=embedding_model,
     )
 
@@ -368,11 +376,11 @@ def get_collection_info(collection: chromadb.Collection) -> Dict[str, Any]:
 
 
 def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
-    """Embed a user query using the same embedding model as document chunks.
+    """Embed a user query using the configured embedding provider.
 
     Args:
         query: The user query text to embed
-        embedding_model: Optional embedding model name, uses environment variable if not provided
+        embedding_model: Optional embedding model name (uses configured provider if not provided)
 
     Returns:
         The embedding vector for the query
@@ -380,18 +388,6 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
     Raises:
         VectorStoreError: If embedding generation fails
     """
-    if embedding_model is None:
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise VectorStoreError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "Please configure your API key in .env file or environment variables."
-        )
-
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-
     try:
         client = openai.OpenAI(api_key=api_key, base_url=base_url)
         response = client.embeddings.create(input=[query], model=embedding_model)

@@ -13,13 +13,12 @@ from healthcompass.chat.history import (
     SYSTEM_PROMPT,
     ConversationHistory,
 )
-from healthcompass.ingestion import call_embedding_api_with_retry, cosine_similarity
+from healthcompass.ingestion import cosine_similarity
+from healthcompass.providers import get_embedding_provider
 
 REQUIRED_ENV = {
-    "OPENAI_BASE_URL": "OpenAI base URL",
-    "OPENAI_API_KEY": "OpenAI API key",
-    "CHAT_MODEL": "Chat model",
-    "EMBED_MODEL": "Embedding model",
+    "CHAT_PROVIDER": "Chat provider (groq or openai)",
+    "EMBEDDING_PROVIDER": "Embedding provider (local or openai)",
 }
 
 
@@ -28,10 +27,18 @@ def build_messages(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> list
 
 
 def create_client() -> OpenAI:
-    return OpenAI(
-        api_key=os.environ["OPENAI_API_KEY"],
-        base_url=os.environ["OPENAI_BASE_URL"],
-    )
+    """Create OpenAI client based on provider configuration."""
+    chat_provider = os.getenv("CHAT_PROVIDER", "groq")
+    if chat_provider == "groq":
+        return OpenAI(
+            api_key=os.environ["GROQ_API_KEY"],
+            base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        )
+    else:
+        return OpenAI(
+            api_key=os.environ["OPENAI_API_KEY"],
+            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        )
 
 
 def ask_model(
@@ -76,14 +83,15 @@ def compare_prompts(
         print(f"{prompt} -> {ask_model(client, prompt, history)}")
 
 
-def run_embedding_demo(client: OpenAI, model: str) -> None:
+def run_embedding_demo() -> None:
     """Generate sample vectors and compare semantic and unrelated text."""
     texts = [
         "How do I reset my account password?",
         "Steps to recover access to my login",
         "The cafeteria menu has pasta today",
     ]
-    embeddings = call_embedding_api_with_retry(client, texts, model)
+    provider = get_embedding_provider()
+    embeddings = provider.embed_documents(texts)
     print(f"dimension: {len(embeddings[0])}")
     print(f"first 8 values: {embeddings[0][:8]}")
     print(f"password vs login recovery: {cosine_similarity(embeddings[0], embeddings[1]):.4f}")
@@ -158,8 +166,10 @@ def main() -> int:
             client = create_client()
         else:
             print("Environment is configured for the RAG app.")
-            print(f"Chat model: {os.getenv('CHAT_MODEL')}")
-            print(f"Embedding model: {os.getenv('EMBED_MODEL')}")
+            chat_provider = os.getenv("CHAT_PROVIDER", "groq")
+            embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
+            print(f"Chat provider: {chat_provider}")
+            print(f"Embedding provider: {embedding_provider}")
             return 0
         if args.chat:
             while True:
@@ -172,7 +182,7 @@ def main() -> int:
                 if prompt.strip():
                     print(ask_model(client, prompt, history))
         elif args.embedding_demo:
-            run_embedding_demo(client, os.environ["EMBED_MODEL"])
+            run_embedding_demo()
         elif args.compare:
             compare_prompts(
                 client,
