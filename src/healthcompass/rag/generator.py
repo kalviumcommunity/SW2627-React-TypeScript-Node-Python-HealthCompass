@@ -1,6 +1,5 @@
 """Grounded answer generation module for HealthCompass RAG system."""
 
-import os
 from typing import Any, Iterator, Optional
 
 GROUNDED_SYSTEM_INSTRUCTION = (
@@ -66,25 +65,28 @@ def generate_grounded_answer(
 
     Args:
         prompt: Complete prompt including system instructions, context, and question.
-        client: Optional OpenAI client instance.
-        model: Model name to use (defaults to OPENAI_MODEL or gpt-4o-mini).
+        client: Optional OpenAI/Gemini client instance.
+        model: Model name to use (defaults to Gemini or OpenAI model).
         temperature: Sampling temperature (0.0 recommended for factual grounding).
         max_tokens: Maximum tokens in generated completion.
 
     Returns:
         Generated answer string.
     """
-    model_name = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    api_key = os.getenv("OPENAI_API_KEY")
+    from healthcompass.ai_client import get_chat_client
 
-    if client is not None or api_key:
+    active_client = client
+    model_name = model
+
+    if active_client is None:
+        active_client, default_model = get_chat_client()
+        if not model_name:
+            model_name = default_model
+
+    if active_client is not None:
         try:
-            if client is None:
-                from openai import OpenAI
-                client = OpenAI(api_key=api_key)
-
-            response = client.chat.completions.create(
-                model=model_name,
+            response = active_client.chat.completions.create(
+                model=model_name or "gemini-1.5-flash",
                 messages=[
                     {"role": "system", "content": GROUNDED_SYSTEM_INSTRUCTION},
                     {"role": "user", "content": prompt},
@@ -111,7 +113,7 @@ def generate_grounded_answer_stream(
 
     Args:
         prompt: Complete prompt including system instructions, context, and question.
-        client: Optional OpenAI client instance.
+        client: Optional OpenAI/Gemini client instance.
         model: Model name to use.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
@@ -119,17 +121,20 @@ def generate_grounded_answer_stream(
     Yields:
         Individual string tokens as they arrive.
     """
-    model_name = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    api_key = os.getenv("OPENAI_API_KEY")
+    from healthcompass.ai_client import get_chat_client
 
-    if client is not None or api_key:
+    active_client = client
+    model_name = model
+
+    if active_client is None:
+        active_client, default_model = get_chat_client()
+        if not model_name:
+            model_name = default_model
+
+    if active_client is not None:
         try:
-            if client is None:
-                from openai import OpenAI
-                client = OpenAI(api_key=api_key)
-
-            stream = client.chat.completions.create(
-                model=model_name,
+            stream = active_client.chat.completions.create(
+                model=model_name or "gemini-1.5-flash",
                 messages=[
                     {"role": "system", "content": GROUNDED_SYSTEM_INSTRUCTION},
                     {"role": "user", "content": prompt},

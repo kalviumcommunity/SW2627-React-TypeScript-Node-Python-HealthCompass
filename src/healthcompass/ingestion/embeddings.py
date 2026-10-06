@@ -126,17 +126,25 @@ def get_embedding_config() -> tuple[str, str, str, int, int]:
     Raises:
         EmbeddingError: If API key is not configured
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
-    max_retry_attempts = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
 
-    if not api_key:
+    if gemini_key:
+        api_key = gemini_key
+        model = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
+        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    elif openai_key:
+        api_key = openai_key
+        model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    else:
         raise EmbeddingError(
             "OPENAI_API_KEY environment variable is not set. "
-            "Please configure your API key in .env file or environment variables."
+            "Please configure your API key (OPENAI_API_KEY or GEMINI_API_KEY) in .env file or environment variables."
         )
+
+    batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
+    max_retry_attempts = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
 
     return api_key, model, base_url, batch_size, max_retry_attempts
 

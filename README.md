@@ -86,7 +86,8 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your OpenAI API key and other settings
+# Edit .env with your free Google Gemini API key from https://aistudio.google.com/app/apikey
+# (or OpenAI API key if preferred)
 
 # Start the backend server
 python -m uvicorn src.api_server:app --host 0.0.0.0 --port 8000
@@ -2098,8 +2099,8 @@ Each result includes:
 
 Retrieval uses the same environment variables as embeddings:
 
-- **OPENAI_API_KEY**: Required for query embedding
-- **EMBEDDING_MODEL**: Must match the model used for document embeddings
+- **GEMINI_API_KEY** (Recommended & Free) or **OPENAI_API_KEY**: Key for query embedding
+- **EMBEDDING_MODEL**: Must match the model used for document embeddings (`text-embedding-004` for Gemini, or `text-embedding-3-small` for OpenAI)
 - **CHROMA_DB_PATH**: Vector database storage path
 - **CHROMA_COLLECTION_NAME**: Collection name for search
 
@@ -2111,7 +2112,7 @@ Embeddings from different models live in different semantic spaces. Using the sa
 - Distance scores accurately reflect semantic similarity
 - Retrieval behavior is predictable and reproducible
 
-If documents use `text-embedding-3-small` (1536 dimensions) but queries use `text-embedding-3-large` (3072 dimensions), the vectors are incompatible and similarity calculations are meaningless.
+If documents use `text-embedding-3-small` (1536 dimensions) but queries use `text-embedding-3-large` (3072 dimensions) or `text-embedding-004` (768 dimensions), the vectors are incompatible and similarity calculations are meaningless.
 
 ### Running Tests
 
@@ -2131,7 +2132,7 @@ This generates a report in `experiments/outputs/retrieval_results.md` with actua
 
 ### Error Handling
 
-- **Missing API key**: Clear error message requiring OPENAI_API_KEY configuration
+- **Missing API key**: Clear error message requiring GEMINI_API_KEY or OPENAI_API_KEY configuration
 - **Empty collection**: Error message requiring document insertion first
 - **Invalid k**: Validation ensures k > 0
 - **Dimension mismatch**: Automatic detection and clear error reporting

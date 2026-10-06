@@ -75,18 +75,24 @@ def get_vector_store_config() -> VectorStoreConfig:
     """
     db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
     collection_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    default_model = (
+        "text-embedding-004"
+        if os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY")
+        else "text-embedding-3-small"
+    )
+    embedding_model = os.getenv("EMBEDDING_MODEL") or default_model
 
     # Vector dimensions for common embedding models
     embedding_dimensions = {
         "text-embedding-3-small": 1536,
         "text-embedding-3-large": 3072,
         "text-embedding-ada-002": 1536,
+        "text-embedding-004": 768,
     }
 
     vector_dimension = embedding_dimensions.get(
-        embedding_model, 1536
-    )  # Default to 1536 for text-embedding-3-small
+        embedding_model, 768 if "004" in embedding_model else 1536
+    )
 
     return VectorStoreConfig(
         db_path=db_path,
@@ -383,17 +389,25 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
     Raises:
         VectorStoreError: If embedding generation fails
     """
-    if embedding_model is None:
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    if gemini_key:
+        api_key = gemini_key
+        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+        default_model = "text-embedding-004"
+    elif openai_key:
+        api_key = openai_key
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        default_model = "text-embedding-3-small"
+    else:
         raise VectorStoreError(
             "OPENAI_API_KEY environment variable is not set. "
-            "Please configure your API key in .env file or environment variables."
+            "Please configure your API key (OPENAI_API_KEY or GEMINI_API_KEY) in .env file or environment variables."
         )
 
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    if embedding_model is None:
+        embedding_model = os.getenv("EMBEDDING_MODEL", default_model)
 
     try:
         client = openai.OpenAI(api_key=api_key, base_url=base_url)

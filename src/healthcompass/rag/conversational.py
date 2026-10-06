@@ -1,6 +1,5 @@
 """Conversational RAG and query condensation for multi-turn dialogues."""
 
-import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -93,16 +92,20 @@ def condense_followup_question(
     if not history_text:
         return query.strip()
 
-    # If client is provided or OPENAI_API_KEY is available in environment
-    if client is not None or os.getenv("OPENAI_API_KEY"):
-        try:
-            if client is None:
-                from openai import OpenAI
-                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    from healthcompass.ai_client import get_chat_client
 
+    active_client = client
+    model_name = model
+    if active_client is None:
+        active_client, default_model = get_chat_client()
+        if not model_name:
+            model_name = default_model
+
+    if active_client is not None:
+        try:
             prompt = CONDENSE_PROMPT_TEMPLATE.format(history=history_text, question=query)
-            response = client.chat.completions.create(
-                model=model,
+            response = active_client.chat.completions.create(
+                model=model_name or "gemini-1.5-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=60,
