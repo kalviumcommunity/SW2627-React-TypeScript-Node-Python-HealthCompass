@@ -86,7 +86,7 @@ def generate_grounded_answer(
     if active_client is not None:
         try:
             response = active_client.chat.completions.create(
-                model=model_name or "gemini-1.5-flash",
+                model=model_name or "gemini-3.5-flash-lite",
                 messages=[
                     {"role": "system", "content": GROUNDED_SYSTEM_INSTRUCTION},
                     {"role": "user", "content": prompt},
@@ -134,7 +134,7 @@ def generate_grounded_answer_stream(
     if active_client is not None:
         try:
             stream = active_client.chat.completions.create(
-                model=model_name or "gemini-1.5-flash",
+                model=model_name or "gemini-3.5-flash-lite",
                 messages=[
                     {"role": "system", "content": GROUNDED_SYSTEM_INSTRUCTION},
                     {"role": "user", "content": prompt},

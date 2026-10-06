@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from openai import OpenAI
 
 # Gemini models (Free tier on Google AI Studio: https://aistudio.google.com/app/apikey)
-DEFAULT_GEMINI_CHAT_MODEL = "gemini-1.5-flash"
+DEFAULT_GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 

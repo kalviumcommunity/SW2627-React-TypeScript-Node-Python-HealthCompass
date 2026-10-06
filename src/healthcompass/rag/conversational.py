@@ -105,7 +105,7 @@ def condense_followup_question(
         try:
             prompt = CONDENSE_PROMPT_TEMPLATE.format(history=history_text, question=query)
             response = active_client.chat.completions.create(
-                model=model_name or "gemini-1.5-flash",
+                model=model_name or "gemini-3.5-flash-lite",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=60,
