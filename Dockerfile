@@ -9,21 +9,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency specifications
+# Copy dependency specifications and source code
 COPY requirements.txt pyproject.toml ./
+COPY src/ src/
 
-# Install python dependencies
+# Install python dependencies and editable package
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source and documentation
-COPY src/ src/
+# Copy supporting data and documentation
 COPY data/ data/
 COPY prompts/ prompts/
 COPY docs/ docs/
 COPY evaluation/ evaluation/
-
-# Install local package in editable mode
-RUN pip install --no-cache-dir -e .
 
 # Expose FastAPI port
 EXPOSE 8000
