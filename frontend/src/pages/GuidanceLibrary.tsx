@@ -19,6 +19,7 @@ import {
   Plus,
   Archive,
 } from 'lucide-react';
+import { getSavedGuidance, saveGuidance, removeSavedGuidance } from '../api/client';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -585,7 +586,21 @@ function GuidanceLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<GuidanceDocument | null>(null);
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  const [savedMap, setSavedMap] = useState<Map<string, string>>(new Map());
+
+  const loadSavedItems = useCallback(async () => {
+    try {
+      const items = await getSavedGuidance();
+      const map = new Map<string, string>();
+      items.forEach((item) => {
+        if (item.document_id) map.set(item.document_id, item.id);
+        map.set(item.id, item.id);
+      });
+      setSavedMap(map);
+    } catch (err) {
+      console.error('Failed to load saved items:', err);
+    }
+  }, []);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -610,7 +625,8 @@ function GuidanceLibrary() {
 
   useEffect(() => {
     loadDocuments();
-  }, [loadDocuments]);
+    loadSavedItems();
+  }, [loadDocuments, loadSavedItems]);
 
   const handleSearch = () => {
     loadDocuments();
@@ -622,14 +638,35 @@ function GuidanceLibrary() {
     setStatusFilter('all');
   };
 
-  const toggleSave = (id: string) => {
-    const newSaved = new Set(savedItems);
-    if (newSaved.has(id)) {
-      newSaved.delete(id);
-    } else {
-      newSaved.add(id);
+  const toggleSave = async (doc: GuidanceDocument) => {
+    try {
+      if (savedMap.has(doc.id)) {
+        const savedId = savedMap.get(doc.id)!;
+        await removeSavedGuidance(savedId);
+        setSavedMap((prev) => {
+          const next = new Map(prev);
+          next.delete(doc.id);
+          next.delete(savedId);
+          return next;
+        });
+      } else {
+        const saved = await saveGuidance({
+          document_id: doc.id,
+          title: doc.title,
+          topic: doc.category,
+          source: doc.authority || 'Guidance Library',
+          excerpt: doc.description || `${doc.title} (v${doc.version})`,
+        });
+        setSavedMap((prev) => {
+          const next = new Map(prev);
+          next.set(doc.id, saved.id);
+          next.set(saved.id, saved.id);
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle save:', err);
     }
-    setSavedItems(newSaved);
   };
 
   const handleAsk = (title: string) => {
@@ -888,16 +925,16 @@ function GuidanceLibrary() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleSave(doc.id);
+                      toggleSave(doc);
                     }}
                     className={`p-1.5 rounded-md transition-colors ${
-                      savedItems.has(doc.id)
+                      savedMap.has(doc.id)
                         ? 'bg-primary-100 text-primary-600'
                         : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
                     }`}
-                    aria-label={savedItems.has(doc.id) ? 'Unsave' : 'Save'}
+                    aria-label={savedMap.has(doc.id) ? 'Unsave' : 'Save'}
                   >
-                    <Bookmark className={`h-3.5 w-3.5 ${savedItems.has(doc.id) ? 'fill-current' : ''}`} />
+                    <Bookmark className={`h-3.5 w-3.5 ${savedMap.has(doc.id) ? 'fill-current' : ''}`} />
                   </button>
                 </div>
 

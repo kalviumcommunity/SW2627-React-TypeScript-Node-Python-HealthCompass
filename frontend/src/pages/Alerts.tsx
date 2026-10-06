@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Shield, AlertCircle, Info, MapPin, Calendar } from 'lucide-react';
 import { getAlerts, ApiError } from '../api/client';
 import type { AlertItem } from '../api/client';
@@ -6,6 +7,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 
 function Alerts() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,8 +132,17 @@ function Alerts() {
                       </div>
                     </div>
                   </div>
-                  <button className="text-xs text-teal-600 hover:text-teal-700 font-medium">
-                    View Details →
+                  <button
+                    onClick={() => {
+                      if (alert.id.startsWith('alert-doc-')) {
+                        navigate('/guidance');
+                      } else {
+                        navigate('/updates');
+                      }
+                    }}
+                    className="text-xs text-primary-600 hover:text-primary-700 font-medium whitespace-nowrap"
+                  >
+                    View Directive →
                   </button>
                 </div>
               </Card>

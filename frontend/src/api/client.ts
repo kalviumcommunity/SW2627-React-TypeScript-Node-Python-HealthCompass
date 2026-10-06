@@ -415,5 +415,34 @@ export async function getLegacyUpdates(): Promise<UpdateItem[]> {
   return apiCall<UpdateItem[]>('/updates');
 }
 
+// ─── Saved Guidance ──────────────────────────────────────────────
+
+export interface SavedGuidanceItem {
+  id: string;
+  document_id?: string;
+  title: string;
+  topic: string;
+  source: string;
+  excerpt?: string;
+  dateSaved: string;
+}
+
+export async function getSavedGuidance(): Promise<SavedGuidanceItem[]> {
+  return apiCall<SavedGuidanceItem[]>('/api/saved');
+}
+
+export async function saveGuidance(item: Partial<SavedGuidanceItem>): Promise<SavedGuidanceItem> {
+  return apiCall<SavedGuidanceItem>('/api/saved', {
+    method: 'POST',
+    body: JSON.stringify(item),
+  });
+}
+
+export async function removeSavedGuidance(id: string): Promise<{ success: boolean; id: string }> {
+  return apiCall<{ success: boolean; id: string }>(`/api/saved/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 // Re-export types that other pages reference
 export type { ApiAskResponse as AskResponse, ApiSourceInfo as SourceInfo };

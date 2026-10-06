@@ -14,8 +14,9 @@ import {
   Info,
   MessageSquare,
   ArrowRight,
+  Bookmark,
 } from 'lucide-react';
-import { askHealthCompass, ApiError } from '../api/client';
+import { askHealthCompass, ApiError, saveGuidance, removeSavedGuidance, getSavedGuidance } from '../api/client';
 import { suggestedQuestions, followUpSuggestions, loadingStages } from '../data/askSuggestions';
 import type { RagAnswer, RagSource } from '../types';
 
@@ -57,6 +58,21 @@ function SourcePanel({
   onViewDocument: (source: RagSource) => void;
 }) {
   const activeSource = sources[activeSourceIdx];
+  const [savedSourceIds, setSavedSourceIds] = useState<Map<string, string>>(new Map());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getSavedGuidance()
+      .then((items) => {
+        const map = new Map<string, string>();
+        items.forEach((it) => {
+          if (it.title) map.set(it.title, it.id);
+          if (it.source) map.set(it.source, it.id);
+        });
+        setSavedSourceIds(map);
+      })
+      .catch(() => {});
+  }, []);
 
   // Clean document title - remove filesystem paths and technical IDs
   const cleanTitle = (title: string, source: string) => {
@@ -190,14 +206,68 @@ function SourcePanel({
             </div>
           )}
 
-          {/* Open Document button */}
-          <button
-            onClick={() => onViewDocument(activeSource)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-gray-300 text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open Document
-          </button>
+          {/* Action buttons */}
+          <div className="space-y-2 pt-1">
+            <button
+              onClick={() => onViewDocument(activeSource)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open Document
+            </button>
+            <button
+              onClick={async () => {
+                if (!activeSource || saving) return;
+                setSaving(true);
+                const title = cleanTitle(activeSource.title, activeSource.source);
+                const key = title;
+                try {
+                  if (savedSourceIds.has(key)) {
+                    const id = savedSourceIds.get(key)!;
+                    await removeSavedGuidance(id);
+                    setSavedSourceIds((prev) => {
+                      const next = new Map(prev);
+                      next.delete(key);
+                      return next;
+                    });
+                  } else {
+                    const saved = await saveGuidance({
+                      title,
+                      topic: 'Clinical Guidance',
+                      source: activeSource.source || 'Ask HealthCompass',
+                      excerpt: activeSource.excerpt || '',
+                    });
+                    setSavedSourceIds((prev) => {
+                      const next = new Map(prev);
+                      next.set(key, saved.id);
+                      return next;
+                    });
+                  }
+                } catch (err) {
+                  console.error('Failed to toggle save source:', err);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 border text-sm rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 ${
+                activeSource && savedSourceIds.has(cleanTitle(activeSource.title, activeSource.source))
+                  ? 'border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Bookmark
+                className={`h-3.5 w-3.5 ${
+                  activeSource && savedSourceIds.has(cleanTitle(activeSource.title, activeSource.source))
+                    ? 'fill-current text-primary-600'
+                    : ''
+                }`}
+              />
+              {activeSource && savedSourceIds.has(cleanTitle(activeSource.title, activeSource.source))
+                ? 'Saved in Guidance'
+                : 'Save to Guidance'}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -293,7 +363,7 @@ function DocumentModal({
 // ─── Answer Renderer ─────────────────────────────────────────────
 
 function AnswerDisplay({ answer, chunksUsed }: { answer: string; chunksUsed: number }) {
-  // Simple markdown-lite rendering: headers, bullets, numbered lists, bold
+  // Markdown-lite rendering: headers, bullets, numbered lists, blockquotes, dividers, code, bold
   const renderAnswer = (text: string) => {
     const lines = text.split('\n');
     const elements: React.ReactNode[] = [];
@@ -326,7 +396,38 @@ function AnswerDisplay({ answer, chunksUsed }: { answer: string; chunksUsed: num
     for (const line of lines) {
       const trimmed = line.trim();
 
+      // Divider / Horizontal Rule
+      if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+        flushList();
+        elements.push(<hr key={elements.length} className="my-3.5 border-gray-200" />);
+        continue;
+      }
+
+      // Blockquotes / System Notes
+      if (trimmed.startsWith('> ') || trimmed === '>') {
+        flushList();
+        const quoteContent = trimmed.startsWith('> ') ? trimmed.slice(2).trim() : '';
+        elements.push(
+          <div
+            key={elements.length}
+            className="border-l-4 border-primary-500 bg-primary-50/70 rounded-r-md px-3.5 py-2.5 my-2.5 text-sm text-gray-800"
+          >
+            {renderInline(quoteContent)}
+          </div>,
+        );
+        continue;
+      }
+
       // Headers
+      if (trimmed.startsWith('#### ')) {
+        flushList();
+        elements.push(
+          <h5 key={elements.length} className="text-xs font-bold uppercase tracking-wider text-gray-600 mt-3 mb-1">
+            {trimmed.slice(5)}
+          </h5>,
+        );
+        continue;
+      }
       if (trimmed.startsWith('### ')) {
         flushList();
         elements.push(
@@ -339,9 +440,18 @@ function AnswerDisplay({ answer, chunksUsed }: { answer: string; chunksUsed: num
       if (trimmed.startsWith('## ')) {
         flushList();
         elements.push(
-          <h3 key={elements.length} className="text-sm font-semibold text-navy-900 mt-3 mb-1">
+          <h3 key={elements.length} className="text-base font-semibold text-navy-900 mt-3.5 mb-1.5">
             {trimmed.slice(3)}
           </h3>,
+        );
+        continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        flushList();
+        elements.push(
+          <h2 key={elements.length} className="text-lg font-bold text-navy-900 mt-4 mb-2">
+            {trimmed.slice(2)}
+          </h2>,
         );
         continue;
       }
@@ -376,7 +486,7 @@ function AnswerDisplay({ answer, chunksUsed }: { answer: string; chunksUsed: num
       // Regular paragraph
       flushList();
       elements.push(
-        <p key={elements.length} className="text-sm text-gray-700 leading-relaxed my-1">
+        <p key={elements.length} className="text-sm text-gray-700 leading-relaxed my-1.5">
           {renderInline(trimmed)}
         </p>,
       );
@@ -386,46 +496,76 @@ function AnswerDisplay({ answer, chunksUsed }: { answer: string; chunksUsed: num
     return elements;
   };
 
-  // Inline formatting: **bold**, [1] source refs
+  // Inline formatting: **bold**, `code`, *italic*, [1] source refs
   const renderInline = (text: string): React.ReactNode => {
     const parts: React.ReactNode[] = [];
     let remaining = text;
     let key = 0;
 
     while (remaining) {
-      // Bold
       const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-      // Source ref
+      const codeMatch = remaining.match(/`([^`]+)`/);
+      const italicMatch = remaining.match(/(?<!\*)\*([^*]+)\*(?!\*)/);
       const refMatch = remaining.match(/\[(\d+)\]/);
 
-      const boldIdx = boldMatch ? remaining.indexOf(boldMatch[0]) : Infinity;
-      const refIdx = refMatch ? remaining.indexOf(refMatch[0]) : Infinity;
+      type Candidate = { type: 'bold' | 'code' | 'italic' | 'ref'; index: number; full: string; content: string };
+      const candidates: Candidate[] = [];
 
-      if (boldIdx === Infinity && refIdx === Infinity) {
+      if (boldMatch && boldMatch.index !== undefined) {
+        candidates.push({ type: 'bold', index: boldMatch.index, full: boldMatch[0], content: boldMatch[1] });
+      }
+      if (codeMatch && codeMatch.index !== undefined) {
+        candidates.push({ type: 'code', index: codeMatch.index, full: codeMatch[0], content: codeMatch[1] });
+      }
+      if (italicMatch && italicMatch.index !== undefined) {
+        candidates.push({ type: 'italic', index: italicMatch.index, full: italicMatch[0], content: italicMatch[1] });
+      }
+      if (refMatch && refMatch.index !== undefined) {
+        candidates.push({ type: 'ref', index: refMatch.index, full: refMatch[0], content: refMatch[1] });
+      }
+
+      if (candidates.length === 0) {
         parts.push(remaining);
         break;
       }
 
-      if (boldIdx <= refIdx && boldMatch) {
-        parts.push(remaining.slice(0, boldIdx));
+      candidates.sort((a, b) => a.index - b.index);
+      const earliest = candidates[0];
+
+      if (earliest.index > 0) {
+        parts.push(remaining.slice(0, earliest.index));
+      }
+
+      if (earliest.type === 'bold') {
         parts.push(
           <strong key={key++} className="font-semibold text-navy-900">
-            {boldMatch[1]}
+            {earliest.content}
           </strong>,
         );
-        remaining = remaining.slice(boldIdx + boldMatch[0].length);
-      } else if (refMatch) {
-        parts.push(remaining.slice(0, refIdx));
+      } else if (earliest.type === 'code') {
+        parts.push(
+          <code key={key++} className="px-1.5 py-0.5 rounded bg-gray-100 text-primary-700 font-mono text-xs">
+            {earliest.content}
+          </code>,
+        );
+      } else if (earliest.type === 'italic') {
+        parts.push(
+          <em key={key++} className="italic text-gray-700">
+            {earliest.content}
+          </em>,
+        );
+      } else if (earliest.type === 'ref') {
         parts.push(
           <span
             key={key++}
             className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-semibold bg-primary-100 text-primary-700 rounded ml-0.5"
           >
-            {refMatch[1]}
+            {earliest.content}
           </span>,
         );
-        remaining = remaining.slice(refIdx + refMatch[0].length);
       }
+
+      remaining = remaining.slice(earliest.index + earliest.full.length);
     }
 
     return parts;
