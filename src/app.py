@@ -209,3 +209,13 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# Export FastAPI instance for deployment discovery
+try:
+    from api_server import app
+except ImportError:
+    try:
+        from src.api_server import app
+    except ImportError:
+        pass
+
