@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, ArrowRight, Search, Archive, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, ArrowRight, Archive } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   getUpdates,
-  getUpdateDetail,
   getUpdateDiff,
   markUpdateAsRead,
   ApiError,
@@ -141,7 +140,7 @@ function Updates() {
         <SearchInput
           placeholder="Search updates, protocols..."
           value={searchQuery}
-          onChange={setSearchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
 

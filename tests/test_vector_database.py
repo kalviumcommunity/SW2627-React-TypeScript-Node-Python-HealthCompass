@@ -571,7 +571,6 @@ def test_embed_query_missing_api_key():
             VectorStoreError, match="OPENAI_API_KEY"
         ):
             embed_query("test query")
-            assert call_args[1]["model"] == "text-embedding-3-large"
 
 
 def test_retrieve_returns_requested_results(test_config):

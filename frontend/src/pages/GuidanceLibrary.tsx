@@ -85,7 +85,7 @@ function UploadModal({
   const [effectiveDate, setEffectiveDate] = useState('');
   const [tags, setTags] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'indexed' | 'failed'>('idle');
+  const [, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'indexed' | 'failed'>('idle');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
