@@ -195,6 +195,59 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return self._dimensions.get(self.model, 1536)
 
 
+class GeminiEmbeddingProvider(EmbeddingProvider):
+    """Google Gemini embedding provider using OpenAI-compatible API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-004",
+        base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/",
+    ):
+        """Initialize Gemini embedding provider.
+
+        Args:
+            api_key: Gemini API key
+            model: Embedding model name (default: text-embedding-004)
+            base_url: Google OpenAI-compatible endpoint
+        """
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url
+        self._client = None
+
+    def _load_client(self):
+        """Lazy-load the OpenAI client on first use."""
+        if self._client is None:
+            try:
+                import openai
+                self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            except ImportError:
+                raise ImportError(
+                    "openai is not installed. Install it with: pip install openai"
+                )
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a list of documents."""
+        self._load_client()
+        response = self._client.embeddings.create(input=texts, model=self.model)
+        return [[float(v) for v in item.embedding] for item in response.data]
+
+    def embed_query(self, text: str) -> List[float]:
+        """Generate embedding for a single query."""
+        self._load_client()
+        response = self._client.embeddings.create(input=[text], model=self.model)
+        return [float(v) for v in response.data[0].embedding]
+
+    def get_model_name(self) -> str:
+        """Get the model name."""
+        return self.model
+
+    def get_dimension(self) -> int:
+        """Get the embedding dimension."""
+        return 768
+
+
 def get_embedding_provider() -> EmbeddingProvider:
     """Get the configured embedding provider based on environment variables.
 
@@ -204,11 +257,25 @@ def get_embedding_provider() -> EmbeddingProvider:
     Raises:
         ValueError: If configuration is invalid
     """
-    provider = os.getenv("EMBEDDING_PROVIDER", "local").lower()
+    provider = os.getenv("EMBEDDING_PROVIDER")
+    if not provider:
+        provider = "local"
+    else:
+        provider = provider.lower()
 
     if provider == "local":
         model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         return LocalEmbeddingProvider(model_name=model_name)
+
+    elif provider == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini"
+            )
+        model = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
+        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+        return GeminiEmbeddingProvider(api_key=api_key, model=model, base_url=base_url)
 
     elif provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
@@ -223,5 +290,5 @@ def get_embedding_provider() -> EmbeddingProvider:
     else:
         raise ValueError(
             f"Invalid EMBEDDING_PROVIDER: {provider}. "
-            "Must be 'local' or 'openai'."
+            "Must be 'local', 'gemini', or 'openai'."
         )

@@ -169,6 +169,63 @@ class OpenAIChatProvider(ChatProvider):
         return self.model
 
 
+class GeminiChatProvider(ChatProvider):
+    """Google Gemini chat provider using OpenAI-compatible API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-3.5-flash-lite",
+        base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/",
+    ):
+        """Initialize Gemini chat provider.
+
+        Args:
+            api_key: Gemini API key (Google AI Studio)
+            model: Chat model name (default: gemini-3.5-flash-lite)
+            base_url: Google OpenAI-compatible endpoint
+        """
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url
+        self._client = None
+
+    def _load_client(self):
+        """Lazy-load the OpenAI client on first use."""
+        if self._client is None:
+            try:
+                import openai
+                self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            except ImportError:
+                raise ImportError(
+                    "openai is not installed. Install it with: pip install openai"
+                )
+
+    def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+        **kwargs
+    ) -> str:
+        """Generate a response using Gemini."""
+        self._load_client()
+
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
+
+        return response.choices[0].message.content
+
+    def get_model_name(self) -> str:
+        """Get the model name."""
+        return self.model
+
+
 def get_chat_provider() -> ChatProvider:
     """Get the configured chat provider based on environment variables.
 
@@ -178,9 +235,28 @@ def get_chat_provider() -> ChatProvider:
     Raises:
         ValueError: If configuration is invalid
     """
-    provider = os.getenv("CHAT_PROVIDER", "groq").lower()
+    provider = os.getenv("CHAT_PROVIDER")
+    if not provider:
+        if os.getenv("GEMINI_API_KEY"):
+            provider = "gemini"
+        elif os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
+            provider = "openai"
+        else:
+            provider = "groq"
+    else:
+        provider = provider.lower()
 
-    if provider == "groq":
+    if provider == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is required when CHAT_PROVIDER=gemini"
+            )
+        model = os.getenv("CHAT_MODEL") or os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash-lite")
+        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+        return GeminiChatProvider(api_key=api_key, model=model, base_url=base_url)
+
+    elif provider == "groq":
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError(
@@ -203,5 +279,5 @@ def get_chat_provider() -> ChatProvider:
     else:
         raise ValueError(
             f"Invalid CHAT_PROVIDER: {provider}. "
-            "Must be 'groq' or 'openai'."
+            "Must be 'gemini', 'groq', or 'openai'."
         )

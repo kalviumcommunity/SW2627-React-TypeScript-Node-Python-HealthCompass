@@ -428,8 +428,8 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
     Raises:
         VectorStoreError: If embedding generation fails
     """
-    provider_name = os.getenv("EMBEDDING_PROVIDER")
-    if provider_name == "local":
+    provider_name = os.getenv("EMBEDDING_PROVIDER", "local").lower()
+    if provider_name in ("local", "gemini"):
         try:
             provider = get_embedding_provider()
             return provider.embed_query(query)
