@@ -1,4 +1,4 @@
-"""Embedding generation for RAG using OpenAI-compatible APIs."""
+"""Embedding generation for RAG using provider abstraction."""
 
 import json
 import os
@@ -9,8 +9,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, List, Mapping, Sequence
 
-import openai
 from dotenv import load_dotenv
+import openai
+
+from healthcompass.providers import get_embedding_provider
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -117,36 +119,34 @@ def rank_chunks_by_similarity(
     return ranked if top_k is None else ranked[:top_k]
 
 
-def get_embedding_config() -> tuple[str, str, str, int, int]:
+def get_embedding_config() -> tuple[str, str, int, int]:
     """Get embedding configuration from environment variables.
 
     Returns:
-        Tuple of (api_key, model, base_url, batch_size, max_retry_attempts)
+        Tuple of (embedding_provider, model_name, batch_size, max_retry_attempts)
 
     Raises:
-        EmbeddingError: If API key is not configured
+        EmbeddingError: If configuration is invalid
     """
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-
-    if gemini_key:
-        api_key = gemini_key
-        model = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
-        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
-    elif openai_key:
-        api_key = openai_key
-        model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    else:
-        raise EmbeddingError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "Please configure your API key (OPENAI_API_KEY or GEMINI_API_KEY) in .env file or environment variables."
-        )
-
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local").lower()
     batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
     max_retry_attempts = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
 
-    return api_key, model, base_url, batch_size, max_retry_attempts
+    if embedding_provider == "local":
+        model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    elif embedding_provider == "openai":
+        model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        if not os.getenv("OPENAI_API_KEY"):
+            raise EmbeddingError(
+                "OPENAI_API_KEY environment variable is not set"
+            )
+    else:
+        raise EmbeddingError(
+            f"Invalid EMBEDDING_PROVIDER: {embedding_provider}. "
+            "Must be 'local' or 'openai'."
+        )
+
+    return embedding_provider, model_name, batch_size, max_retry_attempts
 
 
 def generate_chunk_id(chunk: dict) -> str:
@@ -368,6 +368,10 @@ def _call_embedding_api_with_retry(
     raise EmbeddingError(f"Failed to complete embedding after {max_attempts} attempts")
 
 
+# Alias for backward compatibility with tests
+call_embedding_api_with_retry = _call_embedding_api_with_retry
+
+
 def call_embedding_api_with_retry(
     client,
     texts: List[str],
@@ -386,7 +390,7 @@ def generate_embeddings(
     output_path: Path | None = None,
     skip_existing: bool = True,
 ) -> tuple[EmbeddingResult, EmbeddingRunSummary]:
-    """Generate embeddings for a list of text chunks using OpenAI-compatible API.
+    """Generate embeddings for a list of text chunks using configured provider.
 
     Args:
         chunks: List of chunk dictionaries with 'text', 'source', 'filename',
@@ -400,13 +404,14 @@ def generate_embeddings(
         Tuple of (EmbeddingResult, EmbeddingRunSummary)
 
     Raises:
-        EmbeddingError: If API call fails or validation fails
+        EmbeddingError: If embedding generation fails
     """
     if not chunks:
+        provider = get_embedding_provider()
         empty_result = EmbeddingResult(
             embedded_chunks=[],
             manifest=EmbeddingManifest(
-                embedding_model=embedding_model or "text-embedding-3-small",
+                embedding_model=provider.get_model_name(),
                 chunk_count=0,
                 vector_dimension=0,
                 created_at=datetime.now(timezone.utc).isoformat(),
@@ -423,14 +428,14 @@ def generate_embeddings(
             total_batches=0,
             input_token_count=0,
             estimated_cost_usd=0.0,
-            embedding_model=embedding_model or "text-embedding-3-small",
+            embedding_model=provider.get_model_name(),
             batch_size=batch_size or 64,
             retry_attempts=0,
         )
         return empty_result, empty_summary
 
     try:
-        api_key, default_model, base_url, default_batch_size, max_retry_attempts = (
+        embedding_provider, default_model, default_batch_size, max_retry_attempts = (
             get_embedding_config()
         )
         model = embedding_model or default_model
@@ -438,7 +443,8 @@ def generate_embeddings(
         if actual_batch_size < 1:
             raise ValueError("batch_size must be greater than 0")
 
-        client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        # Get the embedding provider
+        provider = get_embedding_provider()
 
         # Load existing embeddings if skipping
         existing_embeddings = {}
@@ -473,20 +479,71 @@ def generate_embeddings(
             texts = [chunk["text"] for chunk in batch]
 
             try:
-                embeddings, attempts = _call_embedding_api_with_retry(
-                    client, texts, model, max_retry_attempts
-                )
-                total_retry_attempts += attempts - 1
+                # Use provider to generate embeddings
+                embeddings = provider.embed_documents(texts)
+
+                # Normalize embeddings to list[float]
+                normalized_embeddings = []
+                for embedding in embeddings:
+                    if isinstance(embedding, list):
+                        # Already a list, just ensure all values are float
+                        normalized = [float(v) for v in embedding]
+                    elif hasattr(embedding, 'tolist'):
+                        # numpy array or similar
+                        normalized = [float(v) for v in embedding.tolist()]
+                    else:
+                        # Try to convert to list
+                        normalized = [float(v) for v in list(embedding)]
+                    normalized_embeddings.append(normalized)
+
+                # Validate normalized embeddings
+                for idx, embedding in enumerate(normalized_embeddings):
+                    if not isinstance(embedding, list):
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} is not a list after normalization"
+                        )
+                    if not embedding:
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} is empty"
+                        )
+                    if not all(isinstance(v, (int, float)) for v in embedding):
+                        raise EmbeddingError(
+                            f"Embedding at index {idx} contains non-numeric values"
+                        )
+
+                # Validate all embeddings have same dimension
+                if normalized_embeddings:
+                    first_dim = len(normalized_embeddings[0])
+                    for idx, embedding in enumerate(normalized_embeddings):
+                        if len(embedding) != first_dim:
+                            raise EmbeddingError(
+                                f"Embedding dimension mismatch: first embedding has dimension {first_dim}, "
+                                f"but embedding at index {idx} has dimension {len(embedding)}"
+                            )
 
                 # Validate response length
-                if len(embeddings) != len(batch):
+                if len(normalized_embeddings) != len(batch):
                     raise EmbeddingError(
-                        f"API returned {len(embeddings)} embeddings for {len(batch)} chunks"
+                        f"Provider returned {len(normalized_embeddings)} embeddings for {len(batch)} chunks"
                     )
 
                 # Match embeddings to chunks
-                for chunk, embedding in zip(batch, embeddings, strict=True):
-                    source_files.add(chunk.get("source", "unknown"))
+                for chunk, embedding in zip(batch, normalized_embeddings, strict=True):
+                    # Validate chunk structure
+                    if not isinstance(chunk, dict):
+                        raise EmbeddingError("Chunk must be a dictionary")
+                    if "text" not in chunk or not chunk["text"]:
+                        raise EmbeddingError("Chunk missing 'text' field or text is empty")
+                    if "source" not in chunk or not chunk["source"]:
+                        raise EmbeddingError("Chunk missing 'source' field or source is empty")
+                    if "filename" not in chunk or not chunk["filename"]:
+                        raise EmbeddingError("Chunk missing 'filename' field or filename is empty")
+                    if "chunk_id" not in chunk:
+                        raise EmbeddingError("Chunk missing 'chunk_id' field")
+                    if "metadata" not in chunk or not isinstance(chunk["metadata"], dict):
+                        raise EmbeddingError("Chunk missing 'metadata' field or metadata is not a dict")
+
+                    source_files.add(chunk["source"])
                     embedded_chunks.append(
                         EmbeddedChunk(
                             text=chunk["text"],
@@ -495,7 +552,7 @@ def generate_embeddings(
                             chunk_id=chunk["chunk_id"],
                             metadata=dict(chunk["metadata"]),
                             embedding=embedding,
-                            embedding_model=model,
+                            embedding_model=provider.get_model_name(),
                         )
                     )
 
@@ -506,7 +563,7 @@ def generate_embeddings(
                 # Save incrementally if output path provided
                 if output_path:
                     temp_manifest = EmbeddingManifest(
-                        embedding_model=model,
+                        embedding_model=provider.get_model_name(),
                         chunk_count=len(embedded_chunks) + len(existing_embeddings),
                         vector_dimension=len(embeddings[0]) if embeddings else 0,
                         created_at=datetime.now(timezone.utc).isoformat(),
@@ -526,7 +583,7 @@ def generate_embeddings(
         # Create manifest
         vector_dimension = len(final_chunks[0].embedding) if final_chunks else 0
         manifest = EmbeddingManifest(
-            embedding_model=model,
+            embedding_model=provider.get_model_name(),
             chunk_count=len(final_chunks),
             vector_dimension=vector_dimension,
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -536,8 +593,8 @@ def generate_embeddings(
         # Validate results
         validation_errors = validate_embeddings(final_chunks, manifest)
 
-        # Calculate estimated cost
-        estimated_cost = estimate_cost(input_token_count, model)
+        # Calculate estimated cost (0 for local embeddings)
+        estimated_cost = 0.0 if embedding_provider == "local" else estimate_cost(input_token_count, model)
 
         # Create run summary
         summary = EmbeddingRunSummary(
@@ -549,7 +606,7 @@ def generate_embeddings(
             total_batches=total_batches,
             input_token_count=input_token_count,
             estimated_cost_usd=estimated_cost,
-            embedding_model=model,
+            embedding_model=provider.get_model_name(),
             batch_size=actual_batch_size,
             retry_attempts=total_retry_attempts,
             failed_batch_indices=failed_batch_indices,

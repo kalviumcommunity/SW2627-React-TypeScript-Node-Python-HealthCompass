@@ -70,7 +70,6 @@ __all__ = [
     "EmbeddingResult",
     "EmbeddingRunSummary",
     "EmbeddedChunk",
-    "call_embedding_api_with_retry",
     "cosine_similarity",
     "estimate_cost",
     "generate_chunk_id",

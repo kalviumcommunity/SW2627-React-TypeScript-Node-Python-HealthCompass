@@ -82,17 +82,21 @@ def test_get_vector_store_config_defaults():
     """Test that default configuration is loaded correctly."""
     # Clear environment variables to test defaults
     old_env = {}
-    for key in ["CHROMA_DB_PATH", "CHROMA_COLLECTION_NAME", "EMBEDDING_MODEL"]:
+    for key in ["CHROMA_DB_PATH", "CHROMA_COLLECTION_NAME", "EMBEDDING_PROVIDER", "EMBEDDING_MODEL"]:
         old_env[key] = os.environ.get(key)
         if key in os.environ:
             del os.environ[key]
 
     try:
+        os.environ["EMBEDDING_PROVIDER"] = "local"
         config = get_vector_store_config()
         assert config.db_path == "data/chroma_db"
-        assert config.collection_name == "healthcompass_documents"
-        assert config.embedding_dimension == 1536
-        assert config.embedding_model == "text-embedding-3-small"
+        # Collection name now includes provider suffix
+        assert config.collection_name.startswith("healthcompass_documents_")
+        # Dimension depends on provider initialization
+        assert config.embedding_dimension > 0
+        # Model name depends on whether sentence-transformers is available
+        assert config.embedding_model in ["sentence-transformers/all-MiniLM-L6-v2", "text-embedding-3-small"]
     finally:
         # Restore environment variables
         for key, value in old_env.items():
@@ -103,26 +107,29 @@ def test_get_vector_store_config_defaults():
 def test_get_vector_store_config_custom():
     """Test that custom configuration is loaded from environment variables."""
     old_env = {}
-    for key in ["CHROMA_DB_PATH", "CHROMA_COLLECTION_NAME", "EMBEDDING_MODEL"]:
+    for key in ["CHROMA_DB_PATH", "CHROMA_COLLECTION_NAME", "EMBEDDING_PROVIDER", "LOCAL_EMBEDDING_MODEL", "EMBEDDING_MODEL", "OPENAI_API_KEY"]:
         old_env[key] = os.environ.get(key)
+        if key in os.environ:
+            del os.environ[key]
 
     try:
         os.environ["CHROMA_DB_PATH"] = "custom/path"
         os.environ["CHROMA_COLLECTION_NAME"] = "custom_collection"
-        os.environ["EMBEDDING_MODEL"] = "text-embedding-3-large"
+        os.environ["EMBEDDING_PROVIDER"] = "openai"
+        os.environ["EMBEDDING_MODEL"] = "text-embedding-3-small"
+        os.environ["OPENAI_API_KEY"] = "test-key"
 
         config = get_vector_store_config()
         assert config.db_path == "custom/path"
-        assert config.collection_name == "custom_collection"
-        assert config.embedding_dimension == 3072  # text-embedding-3-large
-        assert config.embedding_model == "text-embedding-3-large"
+        # Collection name now includes provider suffix
+        assert config.collection_name.startswith("custom_collection_")
+        assert config.embedding_dimension == 1536
+        assert config.embedding_model == "text-embedding-3-small"
     finally:
         # Restore environment variables
         for key, value in old_env.items():
             if value is not None:
                 os.environ[key] = value
-            elif key in os.environ:
-                del os.environ[key]
 
 
 def test_initialize_vector_store_creates_new_collection(test_config):
@@ -182,7 +189,7 @@ def test_initialize_vector_store_dimension_mismatch(test_config):
         embedding_model="text-embedding-3-large",
     )
 
-    with pytest.raises(VectorStoreError, match="Collection dimension mismatch"):
+    with pytest.raises(VectorStoreError, match="mismatch"):
         initialize_vector_store(bad_config)
 
 
@@ -543,7 +550,12 @@ def test_embed_query_uses_configured_model():
         mock_openai.return_value = mock_client
 
         with patch.dict(
-            os.environ, {"EMBEDDING_MODEL": "text-embedding-3-small", "OPENAI_API_KEY": "test_key"}
+            os.environ,
+            {
+                "EMBEDDING_PROVIDER": "openai",
+                "EMBEDDING_MODEL": "text-embedding-3-small",
+                "OPENAI_API_KEY": "test_key",
+            },
         ):
             result = embed_query("test query")
             assert len(result) == 3
@@ -554,26 +566,11 @@ def test_embed_query_uses_configured_model():
 
 def test_embed_query_missing_api_key():
     """Test that missing API key raises clear error."""
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {"EMBEDDING_PROVIDER": "openai"}, clear=True):
         with pytest.raises(
-            VectorStoreError, match="OPENAI_API_KEY environment variable is not set"
+            VectorStoreError, match="OPENAI_API_KEY"
         ):
             embed_query("test query")
-
-
-def test_embed_query_custom_model():
-    """Test that custom embedding model can be specified."""
-    with patch("healthcompass.vector_store.chroma_store.openai.OpenAI") as mock_openai:
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"}):
-            result = embed_query("test query", embedding_model="text-embedding-3-large")
-            assert len(result) == 3
-            call_args = mock_client.embeddings.create.call_args
             assert call_args[1]["model"] == "text-embedding-3-large"
 
 

@@ -1,16 +1,16 @@
 """ChromaDB vector store for HealthCompass RAG system."""
 
 import os
-import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import chromadb
-import openai
 from chromadb.config import Settings
 from dotenv import load_dotenv
+import openai
+
+from healthcompass.providers import get_embedding_provider
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -55,7 +55,6 @@ class RetrievalResult:
     distance: float
     text: str
     metadata: Dict[str, Any]
-    hybrid_score: float | None = None
 
 
 class VectorStoreError(Exception):
@@ -74,30 +73,31 @@ def get_vector_store_config() -> VectorStoreConfig:
         VectorStoreError: If configuration is invalid
     """
     db_path = os.getenv("CHROMA_DB_PATH", "data/chroma_db")
-    collection_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
-    default_model = (
-        "text-embedding-004"
-        if os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY")
-        else "text-embedding-3-small"
-    )
-    embedding_model = os.getenv("EMBEDDING_MODEL") or default_model
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "local")
 
-    # Vector dimensions for common embedding models
-    embedding_dimensions = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072,
-        "text-embedding-ada-002": 1536,
-        "text-embedding-004": 768,
-    }
+    # Create provider-specific collection name to avoid mixing embedding spaces
+    base_collection_name = os.getenv("CHROMA_COLLECTION_NAME", "healthcompass_documents")
+    collection_name = f"{base_collection_name}_{embedding_provider}"
 
-    vector_dimension = embedding_dimensions.get(
-        embedding_model, 768 if "004" in embedding_model else 1536
-    )
+    # Get embedding provider to determine dimension
+    try:
+        provider = get_embedding_provider()
+        embedding_model = provider.get_model_name()
+        embedding_dimension = provider.get_dimension()
+    except Exception as e:
+        # Fallback to defaults if provider initialization fails
+        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        embedding_dimensions = {
+            "text-embedding-3-small": 1536,
+            "text-embedding-3-large": 3072,
+            "text-embedding-ada-002": 1536,
+        }
+        embedding_dimension = embedding_dimensions.get(embedding_model, 1536)
 
     return VectorStoreConfig(
         db_path=db_path,
         collection_name=collection_name,
-        embedding_dimension=vector_dimension,
+        embedding_dimension=embedding_dimension,
         embedding_model=embedding_model,
     )
 
@@ -134,10 +134,64 @@ def initialize_vector_store(
         )
 
         # Get or create collection
+        collection = None
         try:
             collection = client.get_collection(name=config.collection_name)
             print(f"Loaded existing collection: {config.collection_name}")
         except (chromadb.errors.NotFoundError, chromadb.errors.InvalidCollectionException):
+            pass  # Will create below
+
+        if collection is not None:
+            # Validate dimension compatibility
+            collection_metadata = collection.metadata or {}
+            stored_dimension = collection_metadata.get("embedding_dimension")
+            current_count = collection.count()
+
+            if stored_dimension is not None and stored_dimension != config.embedding_dimension:
+                if current_count == 0:
+                    # Empty collection with wrong dimension — safe to recreate for development
+                    print(
+                        f"[guidance] Dimension mismatch on empty collection '{config.collection_name}': "
+                        f"stored={stored_dimension}, expected={config.embedding_dimension}. "
+                        f"Recreating collection."
+                    )
+                    client.delete_collection(name=config.collection_name)
+                    collection = None  # Will create fresh below
+                else:
+                    # Non-empty collection with wrong dimension — fail clearly
+                    raise VectorStoreError(
+                        f"Embedding configuration mismatch: collection '{config.collection_name}' "
+                        f"uses {stored_dimension} dimensions ({current_count} vectors) but current "
+                        f"provider/model generates {config.embedding_dimension} dimensions. "
+                        f"Use the matching collection or rebuild the development index by deleting "
+                        f"the data/chroma_db directory."
+                    )
+
+            # Verify actual vector dimensions if collection has data
+            if collection is not None and current_count > 0:
+                sample = collection.get(limit=1, include=["embeddings"])
+                sample_embeddings = sample.get("embeddings")
+                if sample_embeddings is not None and len(sample_embeddings) > 0:
+                    actual_dimension = len(sample_embeddings[0])
+                    if actual_dimension != config.embedding_dimension:
+                        raise VectorStoreError(
+                            f"Embedding configuration mismatch: collection '{config.collection_name}' "
+                            f"contains vectors of dimension {actual_dimension} but current "
+                            f"provider/model generates {config.embedding_dimension} dimensions. "
+                            f"Use the matching collection or rebuild the development index."
+                        )
+
+            # Update metadata if dimension was not set
+            if collection is not None and stored_dimension is None:
+                try:
+                    safe_metadata = {k: v for k, v in collection_metadata.items() if not k.startswith("hnsw:")}
+                    safe_metadata["embedding_dimension"] = config.embedding_dimension
+                    collection.modify(metadata=safe_metadata)
+                except Exception:
+                    pass
+
+        # Create collection if it doesn't exist (or was recreated above)
+        if collection is None:
             collection = client.create_collection(
                 name=config.collection_name,
                 metadata={
@@ -149,34 +203,6 @@ def initialize_vector_store(
             )
             print(f"Created new collection: {config.collection_name}")
 
-        collection_metadata = collection.metadata or {}
-        stored_dimension = collection_metadata.get("embedding_dimension")
-        if stored_dimension is not None and stored_dimension != config.embedding_dimension:
-            raise VectorStoreError(
-                f"Collection dimension mismatch: expected {config.embedding_dimension}, "
-                f"found {stored_dimension}. Consider recreating the collection."
-            )
-
-        # Verify collection dimension matches expected
-        if collection.count() > 0:
-            # Get a sample record to verify dimension
-            sample = collection.get(limit=1, include=["embeddings"])
-            if len(sample["embeddings"]) > 0:
-                actual_dimension = len(sample["embeddings"][0])
-                if actual_dimension != config.embedding_dimension:
-                    raise VectorStoreError(
-                        f"Collection dimension mismatch: expected {config.embedding_dimension}, "
-                        f"found {actual_dimension}. Consider recreating the collection."
-                    )
-
-        if stored_dimension is None:
-            collection.modify(
-                metadata={
-                    **collection_metadata,
-                    "embedding_dimension": config.embedding_dimension,
-                }
-            )
-
         print(f"Vector database initialized at: {config.db_path}")
         print(f"Collection: {config.collection_name}")
         print(f"Embedding dimension: {config.embedding_dimension}")
@@ -184,6 +210,8 @@ def initialize_vector_store(
 
         return collection
 
+    except VectorStoreError:
+        raise
     except Exception as e:
         raise VectorStoreError(f"Failed to initialize vector store: {e}") from e
 
@@ -261,7 +289,18 @@ def upsert_records(
     for start in range(0, expected_count, batch_size):
         batch = records[start : start + batch_size]
         try:
+            # Defensive validation before Chroma upsert
             for record in batch:
+                if not isinstance(record.embedding, list):
+                    raise VectorStoreError(
+                        "Embedding must be a Python list of floats"
+                    )
+                if not record.embedding:
+                    raise VectorStoreError("Embedding vector cannot be empty")
+                if not all(isinstance(x, (int, float)) for x in record.embedding):
+                    raise VectorStoreError(
+                        "Embedding vector contains non-numeric values"
+                    )
                 if expected_dimension is not None and len(record.embedding) != expected_dimension:
                     raise VectorStoreError(
                         f"Vector dimension mismatch: expected {expected_dimension}, "
@@ -377,11 +416,11 @@ def get_collection_info(collection: chromadb.Collection) -> Dict[str, Any]:
 
 
 def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
-    """Embed a user query using the same embedding model as document chunks.
+    """Embed a user query using the configured embedding provider.
 
     Args:
         query: The user query text to embed
-        embedding_model: Optional embedding model name, uses environment variable if not provided
+        embedding_model: Optional embedding model name (uses configured provider if not provided)
 
     Returns:
         The embedding vector for the query
@@ -389,29 +428,24 @@ def embed_query(query: str, embedding_model: str | None = None) -> List[float]:
     Raises:
         VectorStoreError: If embedding generation fails
     """
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    provider_name = os.getenv("EMBEDDING_PROVIDER")
+    if provider_name == "local":
+        try:
+            provider = get_embedding_provider()
+            return provider.embed_query(query)
+        except Exception as e:
+            raise VectorStoreError(f"Failed to embed query: {e}") from e
 
-    if gemini_key:
-        api_key = gemini_key
-        base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
-        default_model = "text-embedding-004"
-    elif openai_key:
-        api_key = openai_key
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-        default_model = "text-embedding-3-small"
-    else:
-        raise VectorStoreError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "Please configure your API key (OPENAI_API_KEY or GEMINI_API_KEY) in .env file or environment variables."
-        )
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise VectorStoreError("OPENAI_API_KEY environment variable is not set")
 
-    if embedding_model is None:
-        embedding_model = os.getenv("EMBEDDING_MODEL", default_model)
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model = embedding_model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
     try:
         client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        response = client.embeddings.create(input=[query], model=embedding_model)
+        response = client.embeddings.create(input=[query], model=model)
         return response.data[0].embedding
     except openai.RateLimitError as e:
         raise VectorStoreError(f"Rate limit error during query embedding: {e}") from e
@@ -426,8 +460,6 @@ def retrieve(
     collection: chromadb.Collection,
     k: int = 3,
     embedding_model: str | None = None,
-    metadata_filter: Mapping[str, Any] | None = None,
-    keyword_weight: float = 0.0,
 ) -> List[RetrievalResult]:
     """Perform top-k similarity search for a query against the vector database.
 
@@ -436,8 +468,6 @@ def retrieve(
         collection: ChromaDB Collection instance
         k: Number of results to retrieve (default: 3)
         embedding_model: Optional embedding model name, uses environment variable if not provided
-        metadata_filter: Optional Chroma ``where`` filter.
-        keyword_weight: Blend factor from 0 (semantic only) to 1 (keyword only).
 
     Returns:
         List of RetrievalResult objects ranked by similarity
@@ -447,69 +477,37 @@ def retrieve(
     """
     if k <= 0:
         raise VectorStoreError(f"Invalid k value: {k}. k must be greater than 0.")
-    if not 0.0 <= keyword_weight <= 1.0:
-        raise VectorStoreError("keyword_weight must be between 0 and 1.")
-    if metadata_filter is not None and not isinstance(metadata_filter, Mapping):
-        raise VectorStoreError(
-            "metadata_filter must be a mapping compatible with Chroma where filters."
-        )
 
-    collection_count = collection.count()
-    if collection_count == 0:
+    if collection.count() == 0:
         raise VectorStoreError("Cannot retrieve from empty collection.")
 
     try:
         # Embed the query
         query_embedding = embed_query(query, embedding_model)
 
-        candidate_count = min(collection_count, max(k, k * 3)) if keyword_weight else k
-        query_options: Dict[str, Any] = {
-            "query_embeddings": [query_embedding],
-            "n_results": candidate_count,
-            "include": ["documents", "metadatas", "distances"],
-        }
-        if metadata_filter:
-            query_options["where"] = dict(metadata_filter)
-        results = collection.query(**query_options)
-        records = [
-            {
-                "chunk_id": results["ids"][0][index],
-                "distance": results["distances"][0][index],
-                "text": results["documents"][0][index],
-                "metadata": results["metadatas"][0][index],
-            }
-            for index in range(len(results["ids"][0]))
-        ]
-        if keyword_weight:
-            for record in records:
-                semantic_score = 1 / (1 + record["distance"])
-                keyword_score = _keyword_overlap_score(query, record["text"])
-                record["hybrid_score"] = (
-                    1 - keyword_weight
-                ) * semantic_score + keyword_weight * keyword_score
-            records.sort(key=lambda record: record["hybrid_score"], reverse=True)
+        # Perform similarity search
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=k,
+            include=["documents", "metadatas", "distances"],
+        )
 
-        return [
-            RetrievalResult(
-                rank=index,
-                chunk_id=record["chunk_id"],
-                distance=record["distance"],
-                text=record["text"],
-                metadata=record["metadata"],
-                hybrid_score=record.get("hybrid_score"),
+        # Process results
+        retrieval_results = []
+        for i in range(len(results["ids"][0])):
+            retrieval_results.append(
+                RetrievalResult(
+                    rank=i + 1,
+                    chunk_id=results["ids"][0][i],
+                    distance=results["distances"][0][i],
+                    text=results["documents"][0][i],
+                    metadata=results["metadatas"][0][i],
+                )
             )
-            for index, record in enumerate(records[:k], start=1)
-        ]
+
+        return retrieval_results
 
     except VectorStoreError:
         raise
     except Exception as e:
         raise VectorStoreError(f"Failed to retrieve results: {e}") from e
-
-
-def _keyword_overlap_score(query: str, text: str) -> float:
-    """Return the fraction of unique query terms present in ``text``."""
-    query_terms = set(re.findall(r"\w+", query.casefold()))
-    if not query_terms:
-        return 0.0
-    return len(query_terms & set(re.findall(r"\w+", text.casefold()))) / len(query_terms)

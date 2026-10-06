@@ -56,7 +56,8 @@ def test_system_prompt_must_fit():
 
 
 def test_request_reserves_output_and_retains_follow_up(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     history = ConversationHistory("s", 250, 40)
     client = client_with()
     ask_model(client, "first", history)
@@ -67,7 +68,8 @@ def test_request_reserves_output_and_retains_follow_up(monkeypatch):
 
 
 def test_request_uses_grounded_generation_defaults(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     history = ConversationHistory("s")
     client = client_with()
     ask_model(client, "question", history)
@@ -79,7 +81,8 @@ def test_request_uses_grounded_generation_defaults(monkeypatch):
 
 
 def test_request_accepts_top_p_override(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     history = ConversationHistory("s", top_p=0.5, stop=["END_OF_ANSWER"])
     client = client_with()
     ask_model(client, "question", history)
@@ -89,7 +92,8 @@ def test_request_accepts_top_p_override(monkeypatch):
 
 
 def test_failed_request_restores_previous_turns(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     history = ConversationHistory("s", 180, 40)
     client = client_with()
     ask_model(client, "first", history)
@@ -101,7 +105,8 @@ def test_failed_request_restores_previous_turns(monkeypatch):
 
 
 def test_empty_response_rolls_back(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     history = ConversationHistory("s")
     with pytest.raises(ValueError, match="no usable text"):
         ask_model(client_with(None), "question", history)
@@ -112,7 +117,8 @@ def test_interactive_cli_reuses_history(monkeypatch):
     import app
 
     client = client_with()
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setattr(app, "validate_env", lambda: None)
     monkeypatch.setattr(app, "create_client", lambda: client)
     inputs = iter(["first", "second", "/exit"])
@@ -125,7 +131,8 @@ def test_interactive_cli_reuses_history(monkeypatch):
 def test_compare_uses_independent_histories_and_configured_cap(monkeypatch):
     from app import compare_prompts
 
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     client = client_with()
     compare_prompts(client, budget=1500, max_output_tokens=60, token_limit_parameter="max_tokens")
     requests = client.chat.completions.create.call_args_list
@@ -165,7 +172,8 @@ def test_stop_sequences_reject_invalid_types(stop):
 
 
 def test_empty_stop_list_omits_unsupported_control(monkeypatch):
-    monkeypatch.setenv("CHAT_MODEL", "test-model")
+    monkeypatch.setenv("CHAT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     client = client_with()
     ask_model(client, "question", ConversationHistory(stop=[]))
     assert "stop" not in client.chat.completions.create.call_args.kwargs
