@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt pyproject.toml ./
 COPY src/ src/
 
-# Install python dependencies and editable package
-RUN pip install --no-cache-dir -r requirements.txt
+# Install python dependencies and editable package with high timeout and retries
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --default-timeout=1000 --retries=10 -r requirements.txt
 
 # Copy supporting data and documentation
 COPY data/ data/
